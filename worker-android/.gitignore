@@ -1,0 +1,14 @@
+# Android / Gradle build 产物
+*.iml
+.gradle/
+/local.properties
+.idea/
+.DS_Store
+/build
+/captures
+**/build/
+# 密钥 / 签名
+*.jks
+*.keystore
+# Android Studio profiling
+.cxx/

@@ -1,0 +1,14 @@
+# Python venv（24MB，依赖用 requirements.txt 重建）
+.venv/
+__pycache__/
+*.pyc
+# 运行时数据 / 日志 / 临时文件
+cc_state.json
+cc_billing.json
+_*.log
+_*.err
+_*.png
+_*.txt
+captures/
+# IDE
+.idea/

@@ -1,0 +1,29 @@
+# ── Python ──
+__pycache__/
+*.pyc
+.venv/
+venv/
+boss/boss_config.json
+
+# ── 协调端运行时数据（含设备/计费，勿提交）──
+coordinator/cc_state.json
+coordinator/cc_billing.json
+coordinator/_cc.*
+*.log
+
+# ── Android ──
+worker-android/.gradle/
+worker-android/build/
+worker-android/app/build/
+worker-android/local.properties
+worker-android/.idea/
+*.iml
+
+# ── IDE / OS ──
+.idea/
+.vscode/
+Thumbs.db
+.DS_Store
+
+# ── 临时 ──
+_*.py

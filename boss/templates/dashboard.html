@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>算力老板 · Compute Boss</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<header>
+  <h1>⚡ 算力老板 <span class="sub">Compute Boss · 局域网算力编排</span></h1>
+  <div class="status">
+    <span id="coordDot" class="dot"></span>
+    <span id="coordText">协调端…</span>
+    <span class="lan" id="lanText"></span>
+  </div>
+</header>
+
+<main>
+  <!-- 算力比例（核心可视化） -->
+  <section class="card span2">
+    <div class="card-h">
+      <b>🧮 算力能力比例</b>
+      <small>老板按此比例把任务分给各设备（强的多分）</small>
+      <button id="btnAssess" class="btn">重新评估算力</button>
+    </div>
+    <div id="ratioBar" class="ratiobar"></div>
+    <div id="ratioLegend" class="legend"></div>
+  </section>
+
+  <!-- PC 关键硬件 -->
+  <section class="card">
+    <div class="card-h"><b>💻 本机 PC · 关键硬件</b><small id="pcSpec"></small></div>
+    <div class="metrics" id="pcMetrics"></div>
+    <div class="percpu" id="perCpu"></div>
+  </section>
+
+  <!-- 手机 worker -->
+  <section class="card">
+    <div class="card-h"><b>📱 手机 worker</b><small>接在协调端上的工人</small></div>
+    <div id="phones" class="phones"></div>
+  </section>
+
+  <!-- 项目运行 -->
+  <section class="card span2">
+    <div class="card-h"><b>🚀 加速项目</b><small>选项目 → 按算力比例切分 → 分发到 PC + 手机</small></div>
+    <div class="runner">
+      <select id="projSel"></select>
+      <input id="projParams" placeholder='参数 JSON，如 {"count":200}'>
+      <button id="btnRun" class="btn primary">开始加速</button>
+      <button id="btnCancel" class="btn danger" disabled>取消</button>
+    </div>
+    <div id="projDesc" class="desc"></div>
+
+    <!-- 总进度 -->
+    <div class="run-top">
+      <div class="bigbar"><i id="runBar"></i><span id="runPct">0%</span></div>
+      <div class="run-stat">
+        <span id="runStatus" class="pill">空闲</span>
+        <span id="runThru"></span>
+        <span id="runElapsed"></span>
+      </div>
+    </div>
+
+    <!-- 任务流：每台设备一条 -->
+    <div id="taskflow" class="taskflow"></div>
+
+    <!-- 结果 + 日志 -->
+    <div class="twocol">
+      <div><b>结果 / Result</b><pre id="runResult">—</pre></div>
+      <div><b>调度日志 / Log</b><pre id="runLog">—</pre></div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  算力老板在协调端之上做项目级编排：评估算力比例 · 切分 · 派发(PC 多核 + 手机) · 兜底重算 · 合并。
+  手机 worker 连协调端，老板自己吃满 PC 关键硬件。
+</footer>
+
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

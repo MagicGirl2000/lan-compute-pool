@@ -1,0 +1,7 @@
+.venv/
+.idea/
+__pycache__/
+*.pyc
+boss_config.json
+_*.py
+*.log
