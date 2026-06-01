@@ -40,6 +40,8 @@ class MainActivity : ComponentActivity() {
         // 默认 10.0.2.2 = Android 模拟器(AVD)访问宿主机 PC 的固定 IP。
         // 真机用同一局域网时改成 PC 的局域网 IP(如 192.168.1.x)。
         worker = Worker(this, "http://10.0.2.2:9000", deviceId, deviceName)
+        // 读取本机自己设的能效档位(挣钱速度档)
+        worker.powerLevel = getSharedPreferences("cpu", MODE_PRIVATE).getInt("power_level", 3)
 
         setContent {
             安卓手机算力租用全部包含安全阈值Theme {
@@ -137,6 +139,49 @@ fun WorkerScreen(worker: Worker, deviceName: String) {
                         })
                         Text(" 仅充电时贡献（保护电池，推荐开）", fontSize = 12.sp)
                     }
+                }
+            }
+
+            // 能效档位（本机自己设的挣钱速度档）
+            val ctx = androidx.compose.ui.platform.LocalContext.current
+            var powerLevel by remember { mutableStateOf(worker.powerLevel) }
+            ElevatedCard {
+                Column(Modifier.padding(14.dp)) {
+                    Text("能效档位（本机挣钱速度档）", fontWeight = FontWeight.Bold)
+                    Text("档位越高 = 干活越多、挣工分越快，但越耗电；低档省电挣得慢",
+                        fontSize = 11.sp, color = Color.Gray)
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        for (lv in 1..5) {
+                            val on = lv == powerLevel
+                            val c = when (lv) {
+                                1 -> Color(0xFF00A651); 2 -> Color(0xFF9ACD32)
+                                3 -> Color(0xFFE0C000); 4 -> Color(0xFFF7941E)
+                                else -> Color(0xFFED1C24)
+                            }
+                            Button(
+                                onClick = {
+                                    powerLevel = lv; worker.powerLevel = lv
+                                    ctx.getSharedPreferences("cpu", android.content.Context.MODE_PRIVATE)
+                                        .edit().putInt("power_level", lv).apply()
+                                },
+                                modifier = Modifier.weight(1f),
+                                contentPadding = PaddingValues(horizontal = 2.dp, vertical = 6.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (on) c else Color(0xFF2A3040))
+                            ) { Text("$lv", fontSize = 14.sp) }
+                        }
+                    }
+                    Text(
+                        when (powerLevel) {
+                            1 -> "1级 节能 · 省电优先 · 挣工分最慢"
+                            2 -> "2级 低耗 · 挣得较慢"
+                            3 -> "3级 均衡"
+                            4 -> "4级 高速 · 挣工分快(耗电多)"
+                            else -> "5级 满速 · 火力全开(耗电最多)"
+                        },
+                        fontSize = 11.sp, color = Color.Gray, modifier = Modifier.padding(top = 6.dp)
+                    )
                 }
             }
 

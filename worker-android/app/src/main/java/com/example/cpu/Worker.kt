@@ -40,6 +40,17 @@ class Worker(
     @Volatile var netSessionMb = 0.0
     @Volatile var statusLine = "空闲"
     @Volatile var requireCharging = false
+    // 能效档位 1-5：本机自己设的"挣钱档位"。越高=干完一单几乎不歇=挣最快最耗电；低档=歇久=省电挣得慢。
+    @Volatile var powerLevel = 3
+
+    /** 每完成一单后的休息毫秒：档位越高歇得越少(干得越多)。 */
+    private fun restMs(): Long = when (powerLevel) {
+        1 -> 4000L   // 节能
+        2 -> 2000L
+        3 -> 800L    // 均衡
+        4 -> 200L
+        else -> 0L   // 5级 满速·火力全开
+    }
 
     var onUpdate: (() -> Unit)? = null
 
@@ -96,6 +107,7 @@ class Worker(
                 jobsDone++
                 Log.i(TAG, "完成 $jid，CPU ${"%.1f".format(cpuSec)}核秒，累计完成 $jobsDone")
                 onUpdate?.invoke()
+                sleep(restMs())   // 按能效档位休息：档位越高歇越少、挣越快、越耗电
             } catch (e: Exception) {
                 Log.w(TAG, "loop 异常: ${e.message}")
                 statusLine = "错误：${e.message}（重试中）"
