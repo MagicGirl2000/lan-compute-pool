@@ -199,13 +199,23 @@ def api_config():
     """更新部分配置（协调端地址/模型后端等），落盘。"""
     j = request.get_json(force=True, silent=True) or {}
     for k in ("coordinator_url", "model_backend", "model_path", "use_local_pc",
-              "enable_gpu", "shard_size", "benchmark_seconds",
+              "enable_gpu", "shard_size", "benchmark_seconds", "power_level",
               "share_cpu", "share_gpu", "share_mem", "share_disk", "share_net"):
         if k in j:
             CFG[k] = j[k]
     # 共享 CPU 的开关直接决定本机 PC 是否参与算力分担
     if "share_cpu" in j:
         CFG["use_local_pc"] = bool(j["share_cpu"])
+    # 能效档位 → 本机投入多少核(5级几乎全核, 1级1核)。LocalExecutor.run 每次读 max_workers，立即生效。
+    if "power_level" in j:
+        import globalmode as _gm
+        cores = _gm.level_to_cores(int(j["power_level"]), PROFILE.get("cpu", {}).get("logical", 0))
+        CFG["pc_max_workers"] = cores
+        try:
+            local_exec.max_workers = cores
+            assessor._pc_executor.max_workers = cores
+        except Exception:
+            pass
     config.save(CFG)
     client.base = CFG["coordinator_url"].rstrip("/")
     return jsonify({"ok": True, "config": CFG, "sharing": {

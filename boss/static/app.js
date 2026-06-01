@@ -270,6 +270,34 @@ async function globalTick() {
       <span>${n.cores}核 ${n.mem_gb}GB</span>
       <span class="role ${cls}">${n.role}</span></span>`;
   }).join("") || '<span class="hint">暂无在线节点</span>';
+  // 全速运行 badge + 能效档位
+  $("runState").textContent = g.run_state || "待命";
+  $("runState").style.color = g.run_color || "#8295ad";
+  $("runState").className = "runstate" + (g.running ? " full" : "");
+  renderEnergy(g);
+}
+
+const ELEV = { 1: "#00a651", 2: "#9acd32", 3: "#f7e017", 4: "#f7941e", 5: "#ed1c24" };
+let _energyBound = false;
+function renderEnergy(g) {
+  const cur = g.grade || 3;
+  let h = "";
+  for (let lv = 1; lv <= 5; lv++) {
+    const w = 44 + lv * 11;
+    h += `<div class="ebar${lv === cur ? " on" : ""}" data-lv="${lv}" title="点击设为${lv}级"
+      style="background:${ELEV[lv]};width:${w}%">${lv}级${lv === cur ? ' <span class="arrow">◄ 当前</span>' : ""}</div>`;
+  }
+  $("energyBars").innerHTML = h;
+  $("energyDesc").textContent = (g.grade_label || "") + " — " + (g.grade_desc || "") +
+    (g.level_cores ? ` · 本机投入 ${g.level_cores} 核干活` : "");
+  if (!_energyBound) {
+    _energyBound = true;
+    $("energyBars").addEventListener("click", async (e) => {
+      const b = e.target.closest(".ebar"); if (!b) return;
+      await fetch("/api/config", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ power_level: +b.dataset.lv }) });
+    });
+  }
 }
 
 // ── 启动 ────────────────────────────────────────────────────────────────────

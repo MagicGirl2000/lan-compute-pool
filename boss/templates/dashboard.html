@@ -29,6 +29,14 @@
       <div class="big"><span id="omNodes">0</span><span class="u">节点</span></div>
       <div class="big"><span id="omIdle">0</span><span class="u">空闲核(可助)</span></div>
     </div>
+    <div class="runrow">
+      <div id="runState" class="runstate">待命</div>
+      <div class="energy">
+        <div class="elabel">性能能效等级</div>
+        <div id="energyBars" class="ebars"></div>
+        <div id="energyDesc" class="edesc">—</div>
+      </div>
+    </div>
     <div id="omNodeList" class="omnodes"></div>
     <div class="hint">用法：任意一端的程序 <code>from pool_client import Pool; Pool(url).map("compute", items)</code> 即可把重计算撒给整池（见 examples/）。</div>
   </section>

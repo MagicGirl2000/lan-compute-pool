@@ -234,6 +234,26 @@ class BossGUI:
             v.pack(pady=(8, 0))
             tk.Label(cell, text=label, bg=PANEL2, fg=MUT, font=("Segoe UI", 8)).pack(pady=(0, 8))
             self.om_vars[key] = v
+        # 全速运行 badge + 能效档位选择
+        rr = tk.Frame(inner, bg=PANEL)
+        rr.pack(fill="x", pady=(10, 0))
+        self.run_state_lb = tk.Label(rr, text="待命", bg=PANEL2, fg=MUT,
+                                     font=("Segoe UI", 13, "bold"), padx=14, pady=8)
+        self.run_state_lb.pack(side="left")
+        ef = tk.Frame(rr, bg=PANEL)
+        ef.pack(side="left", fill="x", expand=True, padx=(12, 0))
+        tk.Label(ef, text="能效档位（点击设置 · 越高挣工分越快、越耗电）", bg=PANEL, fg=MUT,
+                 font=("Segoe UI", 8)).pack(anchor="w")
+        bf = tk.Frame(ef, bg=PANEL)
+        bf.pack(anchor="w")
+        self.level_btns = {}
+        for lv in range(1, 6):
+            b = tk.Button(bf, text="%d级" % lv, width=4, relief="flat", cursor="hand2",
+                          font=("Segoe UI", 9, "bold"), command=lambda l=lv: self._on_level(l))
+            b.pack(side="left", padx=2)
+            self.level_btns[lv] = b
+        self.energy_desc = tk.Label(ef, text="", bg=PANEL, fg=TXT, font=("Segoe UI", 8))
+        self.energy_desc.pack(anchor="w", pady=(3, 0))
         # 节点角色列表
         self.om_nodes = tk.Frame(inner, bg=PANEL)
         self.om_nodes.pack(fill="x", pady=(8, 0))
@@ -242,6 +262,21 @@ class BossGUI:
                              "Pool(url).map(\"compute\", items)  即可把重计算撒给整池（见 examples/）",
                  bg=PANEL, fg=MUT, font=("Segoe UI", 8), wraplength=900,
                  justify="left").pack(anchor="w", pady=(6, 0))
+
+    def _on_level(self, lv):
+        self.cfg["power_level"] = lv
+        from globalmode import level_to_cores
+        cores = level_to_cores(lv, self.profile.get("cpu", {}).get("logical", 0))
+        self.cfg["pc_max_workers"] = cores
+        try:
+            self.executor.max_workers = cores
+            self.assessor._pc_executor.max_workers = cores
+        except Exception:
+            pass
+        try:
+            config.save(self.cfg)
+        except Exception:
+            pass
 
     def on_global_toggle(self):
         on = self.glob.toggle()
@@ -264,6 +299,17 @@ class BossGUI:
         for w in self._om_node_widgets:
             w.destroy()
         self._om_node_widgets = []
+        # 全速运行 badge + 能效档位高亮
+        ELEV = {1: "#00a651", 2: "#9acd32", 3: "#f7e017", 4: "#f7941e", 5: "#ed1c24"}
+        self.run_state_lb.config(text=g.get("run_state", "待命"), fg=g.get("run_color", MUT))
+        cur = g.get("grade", 3)
+        for lv, b in self.level_btns.items():
+            if lv == cur:
+                b.config(bg=ELEV[lv], fg="#06101f")
+            else:
+                b.config(bg=PANEL2, fg=MUT)
+        self.energy_desc.config(text="%s — %s · 本机投入 %d 核" % (
+            g.get("grade_label", ""), g.get("grade_desc", ""), g.get("level_cores", 0)))
         for n in g["nodes"]:
             fr = tk.Frame(self.om_nodes, bg=PANEL2)
             fr.pack(side="left", padx=3, pady=2)

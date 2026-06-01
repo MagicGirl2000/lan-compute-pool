@@ -15,6 +15,30 @@
 import time
 
 
+# 能效档位(用户可设 1-5，仿中国家电能效标签视觉)
+# ★语义按用户校准：这是"给自己算力体设的挣钱档位"。
+#   档位越高(5级)→ 火力全开、干活越多、挣工分越快，但耗电越多；1级=节能、挣得慢。
+#   挣多少 = 干得多 × 交付准(准确性由真实工分的复算保证)。
+#   设备能否净挣，还取决于它自身算力占比——弱机(如 WM)消耗>贡献，净工分可为负。
+# 每级: (颜色, 标签, 描述)
+_GRADES = {
+    1: ("#00a651", "1级 · 节能", "省电优先 · 干活少 · 挣工分最慢"),
+    2: ("#9acd32", "2级 · 低耗", "少量贡献 · 挣得较慢"),
+    3: ("#f7e017", "3级 · 均衡", "性能与功耗平衡"),
+    4: ("#f7941e", "4级 · 高速", "多核高载 · 挣工分快(耗电多)"),
+    5: ("#ed1c24", "5级 · 满速", "火力全开 · 挣工分最快(耗电最多)"),
+}
+
+
+def level_to_cores(level, total):
+    """能效档位 → 本机投入多少核干活。5级=几乎全核, 1级=1核。"""
+    total = max(1, int(total or 1))
+    frac = {1: 0.0, 2: 0.25, 3: 0.5, 4: 0.75, 5: 1.0}.get(int(level), 0.5)
+    if level >= 5:
+        return max(1, total - 1)
+    return max(1, int(round(total * frac)) or 1)
+
+
 class GlobalMode:
     def __init__(self, cfg, client, profile=None):
         self.cfg = cfg
@@ -79,7 +103,7 @@ class GlobalMode:
                              "role": "闲·可助", "busy": False, "cpu": 0,
                              "caps": {"python": True, "build": False}})
             idle_cores += local_cores
-        return {
+        st = {
             "on": self.on,
             "node_count": len(nodes),
             "total_cores": tot_cores,
@@ -89,3 +113,24 @@ class GlobalMode:
             "busy_nodes": sum(1 for n in nodes if n["busy"]),
             "nodes": nodes,
         }
+        st.update(self._grade(st))
+        return st
+
+    def _grade(self, st):
+        """能效档位(用户设的)+ 运行态。"""
+        g = int(self.cfg.get("power_level", 3))
+        g = min(5, max(1, g))
+        color, label, desc = _GRADES[g]
+        pc = self.profile.get("cpu", {})
+        cores = level_to_cores(g, pc.get("logical", 0))
+        # 运行态：全局模式开 + 有节点在忙(真在交付算力) = 全速运行中
+        if not st["on"]:
+            run, rcolor, full = "待命（全局模式未开）", "#8295ad", False
+        elif st["node_count"] == 0:
+            run, rcolor, full = "无设备接入", "#ed1c24", False
+        elif st["busy_nodes"] > 0 or st["idle_cores"] < st["total_cores"]:
+            run, rcolor, full = "⚡ 全速运行中", color, True
+        else:
+            run, rcolor, full = "就绪 · 待接活", "#42d392", False
+        return {"grade": g, "grade_color": color, "grade_label": label, "grade_desc": desc,
+                "level_cores": cores, "running": full, "run_state": run, "run_color": rcolor}
