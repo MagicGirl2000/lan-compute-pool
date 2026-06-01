@@ -26,6 +26,7 @@ from executor import LocalExecutor
 import projects as projects_mod
 from scheduler import Scheduler
 from devtasks import DevAccelerator
+from globalmode import GlobalMode
 
 CFG = config.load()
 
@@ -39,6 +40,7 @@ scheduler = Scheduler(CFG, client, assessor, local_exec, PROJECTS)
 devacc = DevAccelerator(CFG, client, scheduler)
 
 PROFILE = hardware.profile()
+glob = GlobalMode(CFG, client, PROFILE)
 
 
 def lan_ip():
@@ -145,6 +147,44 @@ def api_dev_status():
 def api_dev_cancel():
     devacc.cancel()
     return jsonify({"ok": True})
+
+
+# ── 全局模式 / 一体机 ──
+@app.route("/api/global/status")
+def api_global_status():
+    return jsonify(glob.status())
+
+
+@app.route("/api/global/toggle", methods=["POST"])
+def api_global_toggle():
+    j = request.get_json(force=True, silent=True) or {}
+    on = glob.toggle(j.get("on"))
+    CFG["global_mode"] = on
+    config.save(CFG)
+    return jsonify({"ok": True, "on": on})
+
+
+@app.route("/api/offload", methods=["POST"])
+def api_offload():
+    """任意一端的程序把重任务卸载进池子。body: {type, payload, requires?, wait?}
+    wait=true 则阻塞返回结果；否则只返回 job_id。"""
+    j = request.get_json(force=True, silent=True) or {}
+    jid = client.submit(j.get("type", "compute"), j.get("payload", {}),
+                        weight=j.get("weight", "normal"), requires=j.get("requires"))
+    if not jid:
+        return jsonify({"ok": False, "msg": "提交失败(协调端不可用?)"})
+    if not j.get("wait"):
+        return jsonify({"ok": True, "job_id": jid})
+    import time as _t
+    deadline = _t.time() + float(j.get("timeout", 120))
+    while _t.time() < deadline:
+        jobs = client.job_results([jid])
+        jb = jobs.get(jid)
+        if jb and jb.get("status") == "done":
+            return jsonify({"ok": True, "job_id": jid, "result": jb.get("result"),
+                            "worker": jb.get("worker")})
+        _t.sleep(0.5)
+    return jsonify({"ok": False, "job_id": jid, "msg": "超时"})
 
 
 @app.route("/api/config", methods=["POST"])

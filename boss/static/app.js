@@ -230,8 +230,33 @@ async function devTick() {
   $("devLog").textContent = (s.log || []).join("\n") || "—";
 }
 
+// ── 全局模式 / 一体机 ─────────────────────────────────────────────────────────
+$("btnGlobal").addEventListener("click", async () => {
+  await fetch("/api/global/toggle", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+  globalTick();
+});
+async function globalTick() {
+  let g; try { g = await (await fetch("/api/global/status")).json(); } catch { return; }
+  $("btnGlobal").textContent = "全局模式：" + (g.on ? "开" : "关");
+  $("btnGlobal").className = "btn" + (g.on ? " on" : "");
+  $("omCores").textContent = g.total_cores || 0;
+  $("omMem").textContent = g.total_mem_gb || 0;
+  $("omGpu").textContent = g.total_gpu || 0;
+  $("omNodes").textContent = g.node_count || 0;
+  $("omIdle").textContent = g.idle_cores || 0;
+  $("omNodeList").innerHTML = (g.nodes || []).map(n => {
+    const ic = n.kind === "pc" ? "💻" : "📱";
+    const cls = n.busy ? "busy" : "idle";
+    return `<span class="omnode"><span class="ic">${ic}</span>${n.name}
+      <span>${n.cores}核 ${n.mem_gb}GB</span>
+      <span class="role ${cls}">${n.role}</span></span>`;
+  }).join("") || '<span class="hint">暂无在线节点</span>';
+}
+
 // ── 启动 ────────────────────────────────────────────────────────────────────
 loadProjects();
+globalTick();
+setInterval(globalTick, 2000);
 renderDevFields();
 overview();
 devTick();

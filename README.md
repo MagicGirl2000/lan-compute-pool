@@ -254,6 +254,29 @@ lan-compute-pool/
 > ⚠️ 矿工连的是**协调端 :9000**（不是老板 :8000）。手机填 `http://<PC局域网IP>:9000`。
 > 端口连不上多半是防火墙——见第「四」节放行 9000/8000。
 
+## 十一、全局模式 · 一体机 / Global Mode
+
+把 PC + 手机 + 模拟器在**软件层抽象成一台机器**：统一资源视图（合并核数/内存/GPU）、
+角色自动切换（忙自用 ↔ 闲可助）、**双向互助**——任何一端都既帮别人算，又能把自己的重活交出去。
+
+**核心：Offload SDK（`boss/pool_client.py`）** —— 让**任意一端的任意程序**借用整池算力，
+这就是"低端手机跑高端程序"的真实做法：弱机本地只发任务、收结果，重计算在池里并行完成。
+```python
+from pool_client import Pool
+pool = Pool("http://<协调端IP>:9000")
+total = pool.offload("prime", {"lo": 2, "hi": 5_000_000})          # 单个卸载
+rs    = pool.map("compute", [{"iterations": 2_000_000}]*64)         # 批量并行(显著加速)
+```
+示例 `boss/examples/heavy_on_lowend.py`：一个几乎不耗算力的脚本，把 60 个素数分片撒给全池——
+实测由 **PC矿工 38 片 + 手机 12 片** 分担完成。
+
+老板控制台新增「🧊 全局模式·一体机」卡：开关 + 合计核数/内存/GPU/空闲核 + 各节点 忙/闲 角色。
+HTTP 卸载入口：`POST /api/offload {type,payload,wait}`（给非 Python 客户端用）。
+
+> **诚实边界**：这是**可卸载/可并行任务**的一体化（重计算、按模块编译、下载、转码切片…），
+> **不是** OS 层透明借用——刷视频的解码、任意原生程序的无感提速做不到（跨异构系统、隔局域网、
+> 有延迟）。能做到的是把重活丢进池子让全员并行，弱机因此能"调用"高端算力。
+
 ## 许可 / License
 本项目采用 **MIT License**（见 [LICENSE](LICENSE)）。原样提供，无担保。
 Licensed under the **MIT License** (see [LICENSE](LICENSE)). Provided as-is, no warranty.

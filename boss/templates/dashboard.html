@@ -17,6 +17,22 @@
 </header>
 
 <main>
+  <!-- 全局模式 / 一体机 -->
+  <section class="card span2">
+    <div class="card-h"><b>🧊 全局模式 · 一体机</b>
+      <small>把 PC+手机+模拟器 抽象成一台机器：空闲端自动帮忙，忙的端把重活交出去</small>
+      <button id="btnGlobal" class="btn">全局模式：关</button></div>
+    <div id="oneMachine" class="onemachine">
+      <div class="big"><span id="omCores">0</span><span class="u">逻辑核</span></div>
+      <div class="big"><span id="omMem">0</span><span class="u">GB 内存</span></div>
+      <div class="big"><span id="omGpu">0</span><span class="u">GPU</span></div>
+      <div class="big"><span id="omNodes">0</span><span class="u">节点</span></div>
+      <div class="big"><span id="omIdle">0</span><span class="u">空闲核(可助)</span></div>
+    </div>
+    <div id="omNodeList" class="omnodes"></div>
+    <div class="hint">用法：任意一端的程序 <code>from pool_client import Pool; Pool(url).map("compute", items)</code> 即可把重计算撒给整池（见 examples/）。</div>
+  </section>
+
   <!-- 算力比例（核心可视化） -->
   <section class="card span2">
     <div class="card-h">

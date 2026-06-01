@@ -47,6 +47,8 @@ DEFAULTS = {
     "apk_project_dir": "",
     # 工人 app 最新 APK 路径（自动更新工人用）
     "worker_apk_path": "",
+    # 全局模式（一体机）：开启后统一视图 + 双向互助常驻
+    "global_mode": False,
 }
 
 
