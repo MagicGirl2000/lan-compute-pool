@@ -1,0 +1,66 @@
+# 版本记录 / CHANGELOG · LAN Compute Pool
+
+本文件记录每个版本的详细说明。版本号三端同步（协调端 / 安卓矿工 / Windows矿工 / 老板）。
+
+---
+
+## beta-0.2 — 一体机 · 开发任务加速 · 分布式正确性
+
+> 标签：`v0.2`　日期：2026-06-02
+> 一句话：把"PC 协调端 + 安卓/Windows 矿工 + 算力老板"三件套，升级成**可统一调度、能加速真实开发任务、且分布式结果可验证**的局域网算力池。
+
+### 🆕 新增功能
+
+#### 1) 全局模式 · 一体机 (Global Mode)
+把 PC + 手机 + 模拟器在软件层抽象成**一台机器**。
+- 统一资源视图：合并全体在线设备的 逻辑核 / 内存 / GPU / 节点数 / 空闲核。
+- 节点角色自动判定：**忙·自用**（安全阈值降级或 CPU≥60%）↔ **闲·可助**（GREEN）。
+- 一键开关；老板 Web 控制台与桌面 GUI 都有「🧊 全局模式·一体机」卡。
+- 模块：`boss/globalmode.py`；端点 `/api/global/status`、`/api/global/toggle`。
+
+#### 2) Offload SDK（弱机调用整池算力）
+让**任意一端的任意程序**把重计算丢进算力池，全员并行算完拿回结果——这就是"低端手机跑高端程序"的真实做法。
+- `boss/pool_client.py`：`Pool(url).offload(type,payload)` / `.map(type,items)` / `@offloadable` 装饰器。
+- HTTP 入口 `/api/offload`（给非 Python 客户端）。
+- 示例 `boss/examples/heavy_on_lowend.py`：把素数统计撒给全池并行。
+
+#### 3) 开发任务加速 (Dev Acceleration)
+加速 PyCharm 里很慢/很吃算力的操作，带实时日志：
+- **并行计算**：计算型项目按算力比例分到 PC+手机。
+- **装库 (pip)**：多包**并行下载**到共享 wheelhouse → 离线安装（重复装秒过）。
+- **装插件/下载**：一批 URL **分发到池里并行下载**（PC+手机一起，勾"网络"）。
+- **构建 APK**：Gradle **共享构建缓存 + 并行**。
+- **一键部署真机** / **更新工人app**：`adb install -r`。
+- **资源勾选**：CPU / GPU(含手机) / 内存 / 硬盘(缓存) / 网络。
+- 模块：`boss/devtasks.py`、`boss/cmdrunner.py`；端点 `/api/dev/{run,status,cancel}`。
+
+#### 4) 能力路由 (Capability Routing)
+任务声明 `requires`（如 `["build"]`/`["download"]`），协调端只把它派给具备对应 `caps` 的设备。
+- 手机 `build=false` → 永远不会被派去编译 APK。
+- 矿工注册上报 `caps`（cpu/hash/download/python/build）。
+
+#### 5) download 并行预取任务
+安卓 `Worker.kt` 与 Windows `test_worker.py` 新增 `download` 任务：下载+校验+测速，手机以**带宽**参与"装库/装插件"加速。
+
+### 🐞 关键修复
+
+- **手机 CPU 永远 0%**：根因——安卓限制读全局 `/proc/stat`。改读**本进程 `/proc/self/stat`**（恒可读），新增 `cpu_proc` 字段，老板端优先显示。系统 CPU 仍用于安全阈值（0 不误伤）。
+- **分布式分片契约不一致**：`prime` 任务老板按 `lo/hi` 算区间，但矿工旧实现读 `limit` 忽略 `lo/hi`，导致分片在矿工上**静默算错**。已统一三端契约（prime 用 lo/hi、hash 用 rounds，兼容旧字段）。*教训：分布式任务三端 payload 字段名/语义必须完全一致。*
+- **>50 分片丢结果**：`map` 经 `/api/status`（只回最近 50 条）收 >50 个结果会漏。协调端新增 `/api/jobs?ids=` 按 id 查；客户端改用它。
+- **cmd 窗口每秒闪烁**：每次读硬件利用率调 `nvidia-smi`，Windows 下弹控制台窗口。所有 subprocess 加 `CREATE_NO_WINDOW`；并提供无窗口后台启动（`启动老板-后台.bat/.vbs` + `停止老板.bat`）。
+- **桌面 GUI 下半截被裁**：卡片超出固定窗口高且不能滚。改为**可滚动容器**（滚轮+滚动条），所有面板可达。
+
+### ✅ 已验证（本机）
+- 三设备在线（真机 SM-S9370 + 模拟器 + PC 矿工），带 caps。
+- 算力评估：PC 82% / 真机 17% / 模拟器 1%（手机经协调端真实标定）。
+- **大规模并行**：π(10,000,000) 200 分片 / 本机 15 核 / 24s / **加速比 13.6×**，结果 **664579** 经 筛法+试除+数学真值 三重对账一致。
+- 池内并行下载：模拟器手机 + PC 矿工分担；能力路由有效（build 任务无设备能接→一直 queued）。
+
+### 📦 组成
+`coordinator/`（协调端 :9000）· `worker-android/`（安卓矿工）· `boss/`（算力老板 :8000，Web + 桌面 GUI）。
+部署与局域网用法见 [README.md](README.md)。
+
+---
+
+> 设计原则（自 0.2 起）：**"在线" ≠ "可用"；分布式结果必须可交叉验证。**
+> 这些原则在 beta-0.3 会进一步落到"真实工分"（抽检复算 + 信誉 + 弱节点保活）。
