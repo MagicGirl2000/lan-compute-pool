@@ -254,6 +254,17 @@ class BossGUI:
             self.level_btns[lv] = b
         self.energy_desc = tk.Label(ef, text="", bg=PANEL, fg=TXT, font=("Segoe UI", 8))
         self.energy_desc.pack(anchor="w", pady=(3, 0))
+        # 中央越权 · 全局统一设档(老板=中央处理器)
+        cr = tk.Frame(inner, bg=PANEL2, highlightbackground=LINE, highlightthickness=1)
+        cr.pack(fill="x", pady=(10, 0))
+        tk.Label(cr, text="🏛 中央越权 · 全局统一设档（一键给全部节点定能效）", bg=PANEL2, fg="#ffb0c0",
+                 font=("Segoe UI", 9, "bold")).pack(side="left", padx=8, pady=6)
+        for lv in range(1, 6):
+            tk.Button(cr, text="%d级" % lv, width=4, relief="flat", cursor="hand2",
+                      bg="#3a2030", fg="#ffb0c0", font=("Segoe UI", 9),
+                      command=lambda l=lv: self._on_central(l)).pack(side="left", padx=2)
+        self.central_msg = tk.Label(cr, text="", bg=PANEL2, fg=G, font=("Segoe UI", 8))
+        self.central_msg.pack(side="left", padx=8)
         # 节点角色列表
         self.om_nodes = tk.Frame(inner, bg=PANEL)
         self.om_nodes.pack(fill="x", pady=(8, 0))
@@ -262,6 +273,13 @@ class BossGUI:
                              "Pool(url).map(\"compute\", items)  即可把重计算撒给整池（见 examples/）",
                  bg=PANEL, fg=MUT, font=("Segoe UI", 8), wraplength=900,
                  justify="left").pack(anchor="w", pady=(6, 0))
+
+    def _on_central(self, lv):
+        """中央越权：给全部节点下发能效档 + 本机 PC 也照此设。"""
+        r = self.client.set_level("*", lv)
+        self._on_level(lv)   # 本机 PC 同步
+        self.central_msg.config(text=("已全局下发 %d 级 ✓" % lv) if r else "下发失败(协调端?)")
+        self.root.after(2500, lambda: self.central_msg.config(text=""))
 
     def _on_level(self, lv):
         self.cfg["power_level"] = lv

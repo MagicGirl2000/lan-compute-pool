@@ -37,8 +37,18 @@
         <div id="energyDesc" class="edesc">—</div>
       </div>
     </div>
+    <div class="central">
+      <span class="res-lbl">🏛 中央越权 · 全局统一设档（老板=中央处理器，一键给全部节点定能效）：</span>
+      <button class="gset" data-lv="1">1级节能</button>
+      <button class="gset" data-lv="2">2</button>
+      <button class="gset" data-lv="3">3均衡</button>
+      <button class="gset" data-lv="4">4</button>
+      <button class="gset" data-lv="5">5级满速</button>
+      <span id="gsetMsg" class="hint"></span>
+    </div>
     <div id="omNodeList" class="omnodes"></div>
-    <div class="hint">用法：任意一端的程序 <code>from pool_client import Pool; Pool(url).map("compute", items)</code> 即可把重计算撒给整池（见 examples/）。</div>
+    <div class="hint">用法：任意一端的程序 <code>from pool_client import Pool; Pool(url).map("compute", items)</code> 即可把重计算撒给整池（见 examples/）。
+      ⚠️ 中央越权只改"挣钱档"，各节点的安全阈值仍是不可剥夺的自保底线（过热/低电自动停）。</div>
   </section>
 
   <!-- 共享设置 beta0.3 -->

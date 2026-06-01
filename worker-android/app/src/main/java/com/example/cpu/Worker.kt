@@ -205,10 +205,20 @@ class Worker(
             put("python", false)    // 不能装 x86 wheel
         })
         put("ver", WORKER_VERSION)
+        put("power_level", powerLevel)
     }
 
+    @Volatile var forcedByCenter = false   // 是否被中央越权设了档
     private fun register(res: Resources, lvl: Level) {
         val resp = post("/api/register", baseBody(res)) ?: return
+        // 中央越权：协调端下发 forced_level 则本机照此执行(集中力量办大事)
+        val forced = resp.optInt("forced_level", 0)
+        if (forced in 1..5) {
+            if (forced != powerLevel) powerLevel = forced
+            forcedByCenter = true
+        } else {
+            forcedByCenter = false
+        }
         resp.optJSONObject("thresholds")?.let { th ->
             thresholds = Thresholds(
                 cpuYellow = th.optDouble("cpu_yellow", 75.0), cpuRed = th.optDouble("cpu_red", 90.0),

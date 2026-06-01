@@ -182,6 +182,7 @@ def api_register():
     net_mb = float(j.get("net_session_mb", 0))
     level, reasons = safety.evaluate(res, _thresholds, net_mb)
     with _lock:
+        prev = _state["devices"].get(did, {})
         _state["devices"][did] = {
             "name": j.get("name", did),
             "kind": j.get("kind", "phone"),
@@ -190,12 +191,17 @@ def api_register():
             "level": level,
             "reasons": reasons,
             "net_session_mb": net_mb,
+            "ver": j.get("ver"),
+            "power_level": j.get("power_level"),        # 节点自报的能效档
+            "forced_level": prev.get("forced_level"),   # 中央越权下发的档(保留)
             "last_seen": _now(),
             "last_seen_str": _ts(),
         }
+        forced = _state["devices"][did].get("forced_level")
         _save()
+    # 中央越权：若管理员给这台/全部设了 forced_level，随心跳下发，节点照此执行
     return jsonify({"ok": True, "level": level, "reasons": reasons,
-                    "thresholds": _thresholds})
+                    "thresholds": _thresholds, "forced_level": forced})
 
 
 @app.route("/api/pull_job", methods=["POST"])
@@ -242,8 +248,9 @@ def api_pull_job():
             break
         _save()
     paused = (job is None and level == "YELLOW")
+    forced = _state["devices"].get(did, {}).get("forced_level")
     return jsonify({"ok": True, "job": job, "level": level,
-                    "reasons": reasons, "paused": paused})
+                    "reasons": reasons, "paused": paused, "forced_level": forced})
 
 
 @app.route("/api/complete_job", methods=["POST"])
@@ -373,6 +380,26 @@ def api_status():
 @app.route("/api/version")
 def api_version():
     return jsonify({"version": VERSION})
+
+
+@app.route("/api/set_level", methods=["POST"])
+def api_set_level():
+    """中央越权设能效档。body: {device_id: "<id>"|"*", level: 1-5}
+    "*" = 全局所有设备统一设档(集中力量办大事/大跃进式动员)。
+    ★注意：能效档只调'挣钱速度/投入强度'，安全阈值仍是每个节点不可剥夺的自保底线
+    (过热/低电照样自动暂停)——这是大跃进缺失的'基层否决权'，本系统保留。"""
+    j = request.get_json(force=True, silent=True) or {}
+    did = j.get("device_id", "*")
+    lvl = min(5, max(1, int(j.get("level", 3))))
+    with _lock:
+        targets = list(_state["devices"].keys()) if did == "*" else [did]
+        n = 0
+        for d in targets:
+            if d in _state["devices"]:
+                _state["devices"][d]["forced_level"] = lvl
+                n += 1
+        _save()
+    return jsonify({"ok": True, "level": lvl, "affected": n})
 
 
 @app.route("/api/jobs")

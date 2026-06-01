@@ -249,6 +249,18 @@ function syncSharing(sh) {
   }
 }
 
+// ── 中央越权 · 全局统一设档 ───────────────────────────────────────────────────
+document.querySelectorAll(".gset").forEach(b =>
+  b.addEventListener("click", async () => {
+    const lv = +b.dataset.lv;
+    const r = await (await fetch("/api/global/set_level", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ device_id: "*", level: lv })
+    })).json();
+    $("gsetMsg").textContent = r.ok ? `已对全部节点下发 ${lv} 级 ✓` : "下发失败(协调端?)";
+    setTimeout(() => $("gsetMsg").textContent = "", 2500);
+  }));
+
 // ── 全局模式 / 一体机 ─────────────────────────────────────────────────────────
 $("btnGlobal").addEventListener("click", async () => {
   await fetch("/api/global/toggle", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });

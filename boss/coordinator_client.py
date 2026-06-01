@@ -59,6 +59,15 @@ class CoordinatorClient:
         except Exception:
             return None
 
+    def set_level(self, device_id, level):
+        """中央越权给某设备/全部("*")设能效档。"""
+        try:
+            r = requests.post(self.base + "/api/set_level",
+                              json={"device_id": device_id, "level": level}, timeout=self.timeout)
+            return r.json()
+        except Exception:
+            return None
+
     def job_results(self, job_ids):
         """给一批 job_id，返回 {job_id: job_dict}。用 /api/jobs 按 id 查，
         不受 /api/status 只回最近50条的限制（多分片时不丢结果）。"""

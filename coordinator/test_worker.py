@@ -26,6 +26,10 @@ DID = os.environ.get("CC_WORKER_ID", "pc-worker")
 # 可选共享哪些关键资源(逗号分隔)：cpu/hash/compute/download/python。默认全开。
 SHARE = set(s.strip() for s in os.environ.get(
     "CC_SHARE", "cpu,hash,compute,download,python").split(",") if s.strip())
+# 能效档位 1-5(自报)：本机挣钱速度档。可被中央越权(协调端下发 forced_level)覆盖。
+POWER = {"level": int(os.environ.get("CC_LEVEL", "3"))}
+def rest_ms(level):
+    return {1: 4.0, 2: 2.0, 3: 0.8, 4: 0.2}.get(int(level), 0.0)
 
 
 def post(path, body):
@@ -115,7 +119,12 @@ def main():
     done = 0; idle = 0
     while True:
         base["resources"] = read_res()      # 每轮刷新真实资源(CPU 实时,不再永远0)
+        base["power_level"] = POWER["level"]
         r = post("/api/pull_job", base)
+        fl = r.get("forced_level")
+        if isinstance(fl, int) and 1 <= fl <= 5 and fl != POWER["level"]:
+            POWER["level"] = fl              # 中央越权设档
+            print("← 中央越权设为 %d 级" % fl)
         job = r.get("job")
         if not job:
             if r.get("paused"):
@@ -136,6 +145,7 @@ def main():
         done += 1
         if not loop and done >= 10:
             break
+        time.sleep(rest_ms(POWER["level"]))   # 按能效档休息：档越高歇越少、挣越快、越耗电
     print("\n本轮完成 %d 个任务" % done)
 
 

@@ -87,6 +87,13 @@ main{display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:16px;max-width:
 pre{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px;
   font-size:12px;max-height:160px;overflow:auto;margin:6px 0 0;white-space:pre-wrap;color:var(--mut)}
 
+/* 中央越权设档 */
+.central{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:12px 0;
+  padding:10px;background:var(--panel2);border-radius:8px;border:1px solid var(--line)}
+.central .gset{background:#3a2030;color:#ffb0c0;border:1px solid #5a2a3a;border-radius:7px;
+  padding:5px 10px;cursor:pointer;font-size:12px;font-weight:600}
+.central .gset:hover{background:var(--acc2);color:#06101f}
+
 /* 全速运行 + 能效等级 */
 .runrow{display:flex;gap:14px;align-items:center;margin:12px 0;flex-wrap:wrap}
 .runstate{font-size:18px;font-weight:700;padding:10px 16px;border-radius:10px;

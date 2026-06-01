@@ -162,6 +162,28 @@ def api_global_status():
     return jsonify(glob.status())
 
 
+@app.route("/api/global/set_level", methods=["POST"])
+def api_global_set_level():
+    """中央(老板=中央处理器)越权给节点设能效档。body:{device_id|"*", level}"""
+    j = request.get_json(force=True, silent=True) or {}
+    did = j.get("device_id", "*")
+    lvl = int(j.get("level", 3))
+    r = client.set_level(did, lvl)
+    # "*" 或本机 → 同时改本机 PC 的能效(它也是个算力体)
+    if did in ("*", "pc"):
+        import globalmode as _gm
+        CFG["power_level"] = lvl
+        cores = _gm.level_to_cores(lvl, PROFILE.get("cpu", {}).get("logical", 0))
+        CFG["pc_max_workers"] = cores
+        try:
+            local_exec.max_workers = cores
+            assessor._pc_executor.max_workers = cores
+        except Exception:
+            pass
+        config.save(CFG)
+    return jsonify({"ok": bool(r), "result": r, "level": lvl})
+
+
 @app.route("/api/global/toggle", methods=["POST"])
 def api_global_toggle():
     j = request.get_json(force=True, silent=True) or {}
