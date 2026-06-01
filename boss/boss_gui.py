@@ -129,6 +129,8 @@ class BossGUI:
 
         # —— 全局模式 / 一体机 ——
         self._card_global(inner)
+        # —— 共享设置 (beta0.3) ——
+        self._card_sharing(inner)
         # —— 算力比例 ——
         self._card_ratio(inner)
         # —— 项目运行 ——
@@ -184,6 +186,34 @@ class BossGUI:
                                        font=("Segoe UI", 9), justify="left", wraplength=420)
         self.lb_phone_empty.pack(anchor="w")
         self._phone_widgets = []
+
+    def _card_sharing(self, parent):
+        _, _, inner = self._card(parent, "🔌 共享设置",
+                                 "可选是否把本机关键设备共享进算力池(关掉=不贡献也不占用)")
+        row = tk.Frame(inner, bg=PANEL)
+        row.pack(fill="x")
+        self.share_vars = {}
+        for key, label in [("share_cpu", "CPU"), ("share_gpu", "GPU"), ("share_mem", "内存"),
+                           ("share_disk", "硬盘"), ("share_net", "网络")]:
+            v = tk.IntVar(value=1 if self.cfg.get(key, True) else 0)
+            self.share_vars[key] = v
+            tk.Checkbutton(row, text=label, variable=v, bg=PANEL, fg=TXT, selectcolor=PANEL2,
+                           activebackground=PANEL, activeforeground=TXT, font=("Segoe UI", 9),
+                           command=lambda k=key: self._on_share(k)).pack(side="left", padx=6)
+        self.share_saved = tk.Label(inner, text="", bg=PANEL, fg=G, font=("Segoe UI", 8))
+        self.share_saved.pack(anchor="w", pady=(4, 0))
+
+    def _on_share(self, key):
+        on = bool(self.share_vars[key].get())
+        self.cfg[key] = on
+        if key == "share_cpu":
+            self.cfg["use_local_pc"] = on   # 不共享CPU → 本机不参与算力分担
+        try:
+            config.save(self.cfg)
+        except Exception:
+            pass
+        self.share_saved.config(text="已保存 ✓")
+        self.root.after(1500, lambda: self.share_saved.config(text=""))
 
     def _card_global(self, parent):
         _, head, inner = self._card(parent, "🧊 全局模式 · 一体机",
@@ -583,10 +613,15 @@ class BossGUI:
                          font=("Segoe UI", 9, "bold")).pack(side="left", padx=8, pady=4)
                 tk.Label(fr, text=lv, bg=PANEL2, fg=lvcol,
                          font=("Segoe UI", 8)).pack(side="left", padx=4)
-                info = "%s核 · CPU%.0f%%" % (r.get("cores", "?"),
-                                             r.get("cpu") or 0)
+                cpu_disp = r.get("cpu_proc") or r.get("cpu") or 0   # 优先工人进程CPU(修永远0)
+                info = "%s核 · CPU%.0f%%" % (r.get("cores", "?"), cpu_disp)
                 if r.get("battery") is not None:
                     info += " · 🔋%s%%%s" % (r["battery"], "⚡" if r.get("charging") else "")
+                b = (coord.get("billing") or {}).get(did, {}) if coord else {}
+                if b.get("credits") is not None:
+                    info += " · 工分%.1f 信誉%.0f" % (b.get("credits", 0), b.get("reputation", 100))
+                    if b.get("checks_failed"):
+                        info += "(失败%d)" % b["checks_failed"]
                 tk.Label(fr, text=info, bg=PANEL2, fg=MUT,
                          font=("Segoe UI", 8)).pack(side="left", padx=4)
                 self._phone_widgets.append(fr)

@@ -10,7 +10,7 @@ import json
 HERE = os.path.dirname(os.path.abspath(__file__))
 CONFIG_FILE = os.path.join(HERE, "boss_config.json")
 
-VERSION = "beta-0.2"   # 三端同步版本（协调端 / 安卓矿工 / Windows矿工 / 老板）
+VERSION = "beta-0.3"   # 三端同步版本（协调端 / 安卓矿工 / Windows矿工 / 老板）
 
 DEFAULTS = {
     # 老板自己的 Web 控制台端口
@@ -49,6 +49,14 @@ DEFAULTS = {
     "worker_apk_path": "",
     # 全局模式（一体机）：开启后统一视图 + 双向互助常驻
     "global_mode": False,
+
+    # ── beta0.3 共享设置：可选是否共享本机的关键设备 ──
+    # 关掉某项 → 本机就不把该资源贡献给算力池(也不会用它)。
+    "share_cpu": True,    # CPU 多核并行(关→本机不参与计算分担)
+    "share_gpu": True,    # GPU(真实模型后端用)
+    "share_mem": True,    # 内存(允许更大分片)
+    "share_disk": True,   # 硬盘(共享缓存 wheelhouse/gradle)
+    "share_net": True,    # 网络(并行下载/预取)
 }
 
 

@@ -24,6 +24,7 @@
 import os
 import json
 import time
+import random
 import threading
 import datetime
 from flask import Flask, request, jsonify, Response
@@ -32,11 +33,18 @@ import safety
 
 app = Flask(__name__)
 
-VERSION = "beta-0.2"   # 三端同步版本号（协调端 / 安卓矿工 / Windows矿工 / 老板）
+VERSION = "beta-0.3"   # 三端同步版本号（协调端 / 安卓矿工 / Windows矿工 / 老板）
 PORT = int(os.environ.get("CC_PORT", "9000"))
 DATA_DIR = os.path.dirname(os.path.abspath(__file__))
 STATE_FILE = os.path.join(DATA_DIR, "cc_state.json")
 BILLING_FILE = os.path.join(DATA_DIR, "cc_billing.json")
+
+# ── 真实工分(beta0.3)：抽检复算 + 信誉。工分只发给"被验证为真"的活 ──
+SPOT_CHECK_RATE = float(os.environ.get("CC_SPOTCHECK", "0.15"))  # 已完成任务被抽检复算的概率
+STALE_JOB_SEC   = int(os.environ.get("CC_STALEJOB", "20"))       # running 超过此秒(且worker心跳旧)→重排
+REP_START, REP_UP, REP_DOWN = 100.0, 1.0, 25.0                   # 信誉初始/复检通过+/复检失败-
+# 计算"易变"字段：复算比对时忽略(每台机器这些值天然不同，不算造假)
+_VOLATILE = {"ms", "kbps", "_acc", "lo", "hi", "rounds", "limit", "iterations", "samples", "seed", "url"}
 
 # ── 算力租用单价（可改；单位：元）。减免租金 = 把别人欠你的费用抵掉你的成本 ──
 PRICES = {
@@ -111,6 +119,56 @@ def add_billing(device_id, usage):
     return cost
 
 
+# ── 真实工分 / 信誉 ──────────────────────────────────────────────────────────
+def _load_billing():
+    if os.path.exists(BILLING_FILE):
+        try:
+            return json.load(open(BILLING_FILE, "r", encoding="utf-8"))
+        except Exception:
+            pass
+    return {}
+
+
+def _save_billing(rec):
+    try:
+        json.dump(rec, open(BILLING_FILE, "w", encoding="utf-8"),
+                  ensure_ascii=False, indent=1)
+    except Exception:
+        pass
+
+
+def award_credits(device_id, points, passed_check=None):
+    """给设备记/扣工分 + 更新信誉。
+    points: 本次工分增量(可负=撤销)。passed_check: None=非复检; True/False=复检结果。"""
+    rec = _load_billing()
+    d = rec.setdefault(device_id, {"usage": {}, "cost": 0.0})
+    d.setdefault("credits", 0.0)
+    d.setdefault("reputation", REP_START)
+    d.setdefault("checks_passed", 0)
+    d.setdefault("checks_failed", 0)
+    d["credits"] = round(max(0.0, d["credits"] + points), 3)
+    if passed_check is True:
+        d["checks_passed"] += 1
+        d["reputation"] = min(100.0, d["reputation"] + REP_UP)
+    elif passed_check is False:
+        d["checks_failed"] += 1
+        d["reputation"] = max(0.0, d["reputation"] - REP_DOWN)
+    _save_billing(rec)
+    return d["credits"], d["reputation"]
+
+
+def _canon(result):
+    """复算比对用的规范化结果：丢掉每台机器天然不同的易变字段。"""
+    if not isinstance(result, dict):
+        return result
+    return {k: v for k, v in result.items() if k not in _VOLATILE}
+
+
+def _job_points(usage):
+    """这份活值多少工分 = 真实 CPU 核秒(干得多得得多)。"""
+    return round(float((usage or {}).get("cpu_core_sec", 0.0)), 3)
+
+
 # ══════════════════════════════════════════════════════════════════════════
 #  REST API（手机 worker 调用）
 # ══════════════════════════════════════════════════════════════════════════
@@ -160,6 +218,8 @@ def api_pull_job():
     # build/python 类只发给具备该能力的设备（手机没 SDK 就不会派到 build APK）。
     worker_caps = set(k for k, v in (j.get("caps") or {}).items() if v)
     with _lock:
+        if did in _state["devices"]:        # 任何接触都刷新心跳→不被误判离线/被reaper误收
+            _state["devices"][did]["last_seen"] = _now()
         job = None
         for jb in _state["jobs"]:
             if jb["status"] != "queued":
@@ -171,9 +231,13 @@ def api_pull_job():
             reqs = set(jb.get("requires") or [])
             if reqs and not reqs.issubset(worker_caps):
                 continue
+            # 复检任务不能再发回原 worker（必须换一台设备复算才有意义）
+            if jb.get("exclude_worker") == did:
+                continue
             jb["status"] = "running"
             jb["worker"] = did
             jb["started"] = _ts()
+            jb["started_ts"] = _now()   # 给"卡死任务重排"reaper 用
             job = jb
             break
         _save()
@@ -184,23 +248,79 @@ def api_pull_job():
 
 @app.route("/api/complete_job", methods=["POST"])
 def api_complete_job():
-    """worker 交结果 + 上报本次用量 → 记账。"""
+    """worker 交结果 + 上报用量 → 记账 + 真实工分(抽检复算)。
+    ★真实工分逻辑：
+      - 普通任务完成：以 SPOT_CHECK_RATE 概率【抽检】→ 派复算副本给【另一台】设备，
+        暂不发工分；其余直接发工分。
+      - 复算任务完成：与原任务结果比对(去易变字段)。一致→原worker得工分+信誉↑；
+        不一致→原worker工分撤销+信誉↓，并用【可信的复算结果纠正原任务】(保证总结果对)。"""
     j = request.get_json(force=True, silent=True) or {}
     jid = j.get("job_id")
     usage = j.get("usage", {})
     did = j.get("device_id") or request.remote_addr
     result = j.get("result")
     cost = add_billing(did, usage)
+    points = _job_points(usage)
+
     with _lock:
-        for jb in _state["jobs"]:
-            if jb["id"] == jid:
-                jb["status"] = "done"
-                jb["result"] = result
-                jb["finished"] = _ts()
-                jb["cost"] = cost
-                break
+        if did in _state["devices"]:        # 交活也刷新心跳
+            _state["devices"][did]["last_seen"] = _now()
+        job = next((x for x in _state["jobs"] if x["id"] == jid), None)
+        if job is None:
+            _save()
+            return jsonify({"ok": True, "billed": cost})
+        job["status"] = "done"
+        job["result"] = result
+        job["finished"] = _ts()
+        job["cost"] = cost
+        job["worker"] = did
+        verify_of = job.get("verify_of")
         _save()
-    return jsonify({"ok": True, "billed": cost})
+
+    # ── 这是一个"复算任务" ──
+    if verify_of:
+        with _lock:
+            orig = next((x for x in _state["jobs"] if x["id"] == verify_of), None)
+        if orig is not None:
+            ov = orig.get("worker_orig") or orig.get("worker")
+            ok = (_canon(result) == _canon(orig.get("result")))
+            if ok:
+                award_credits(ov, orig.get("points", 0), passed_check=True)   # 原活是真的→发工分
+                award_credits(did, round(points * 0.5, 3))                    # 复检者也得工分
+                with _lock:
+                    orig["verify"] = "passed"; orig["credited"] = True
+            else:
+                award_credits(ov, 0, passed_check=False)                      # 撤销+扣信誉
+                award_credits(did, round(points * 0.5, 3), passed_check=True)
+                with _lock:
+                    orig["result"] = result        # 用可信结果纠正原任务(保证整体计算正确)
+                    orig["verify"] = "FAILED"; orig["credited"] = False
+            with _lock:
+                _save()
+            return jsonify({"ok": True, "billed": cost, "verify_of": verify_of, "passed": ok})
+        return jsonify({"ok": True, "billed": cost})
+
+    # ── 普通任务：抽检 or 直接发工分 ──
+    with _lock:
+        job["points"] = points
+        job["worker_orig"] = did
+    if random.random() < SPOT_CHECK_RATE:
+        with _lock:
+            _state["job_seq"] += 1
+            vjid = "J%05d" % _state["job_seq"]
+            _state["jobs"].append({
+                "id": vjid, "type": job["type"], "payload": job.get("payload", {}),
+                "weight": job.get("weight", "normal"), "requires": job.get("requires", []),
+                "exclude_worker": did, "verify_of": jid,
+                "status": "queued", "created": _ts(), "worker": None, "result": None})
+            job["verify"] = "pending"; job["credited"] = False
+            _save()
+        return jsonify({"ok": True, "billed": cost, "spotcheck": vjid})
+    else:
+        credits, rep = award_credits(did, points)
+        with _lock:
+            job["credited"] = True; job["verify"] = "trusted"
+        return jsonify({"ok": True, "billed": cost, "credits": credits, "reputation": rep})
 
 
 @app.route("/api/submit_job", methods=["POST"])
@@ -331,8 +451,33 @@ tick(); setInterval(tick,2000);
 </script></body></html>"""
 
 
+def _reaper():
+    """卡死任务重排：worker 领了活却心跳停了(锁屏被冻/掉线)→把它的 running 任务退回队列，
+    让活着的设备重新接走。这就是修"半死节点拖累集体/一顿一顿"的关键。"""
+    while True:
+        time.sleep(5)
+        now = _now()
+        moved = 0
+        with _lock:
+            for jb in _state["jobs"]:
+                if jb.get("status") != "running":
+                    continue
+                w = jb.get("worker")
+                last = _state["devices"].get(w, {}).get("last_seen", 0)
+                if now - last > STALE_JOB_SEC:        # worker 心跳已旧 → 它多半冻住了
+                    jb["status"] = "queued"
+                    jb["worker"] = None
+                    jb.pop("started_ts", None)
+                    moved += 1
+            if moved:
+                _save()
+        if moved:
+            print("[reaper] 重排 %d 个卡死任务(worker心跳超时)" % moved)
+
+
 if __name__ == "__main__":
     _load()
+    threading.Thread(target=_reaper, daemon=True).start()
     print("=" * 60)
     print(" 分布式算力协调端 (%s) http://0.0.0.0:%d" % (VERSION, PORT))
     print(" 看板: http://127.0.0.1:%d/dashboard" % PORT)

@@ -46,6 +46,7 @@ async function overview() {
     const c = s.dev_caps;
     $("devCaps").textContent = `本机能力: ${c.build?"✓构建APK":"✗无SDK"} · ${c.adb?"✓adb":"✗无adb"} · ✓pip · ✓下载`;
   }
+  if (s.sharing) syncSharing(s.sharing);
 
   // PC 硬件
   const pf = s.profile, u = s.util;
@@ -66,7 +67,8 @@ async function overview() {
       <span class="lv ${p.level}">${p.level}</span>
       <span>${p.cores||"?"}核</span>
       <span title="安卓限制读全局CPU,优先显示工人进程占用">CPU ${devCpu(p)}</span>
-      <span>${p.battery!=null?"🔋"+p.battery+"%"+(p.charging?"⚡":""):""}</span></div>`
+      <span>${p.battery!=null?"🔋"+p.battery+"%"+(p.charging?"⚡":""):""}</span>
+      ${p.credits!=null?`<span class="hint">工分 ${(+p.credits).toFixed(1)} · 信誉 ${(+(p.reputation??100)).toFixed(0)}${p.checks_failed?` · 失败${p.checks_failed}`:""}</span>`:""}</div>`
   ).join("") : `<div class="empty">暂无手机接入。手机算力 app 填本机IP <b>${s.lan_ip}:9000</b>（协调端）即可。</div>`;
 
   // 当前运行
@@ -228,6 +230,23 @@ async function devTick() {
   $("devMetrics").textContent = parts.join(" · ");
   // 日志（compute 模式用调度日志，命令模式用 dev log）
   $("devLog").textContent = (s.log || []).join("\n") || "—";
+}
+
+// ── 共享设置 (beta0.3) ────────────────────────────────────────────────────────
+let _shareBound = false;
+function syncSharing(sh) {
+  document.querySelectorAll("input.share").forEach(c => {
+    if (document.activeElement !== c) c.checked = !!sh[c.dataset.k];
+  });
+  if (!_shareBound) {
+    _shareBound = true;
+    document.querySelectorAll("input.share").forEach(c =>
+      c.addEventListener("change", async () => {
+        const body = {}; body[c.dataset.k] = c.checked;
+        await fetch("/api/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+        $("shareSaved").textContent = "已保存 ✓"; setTimeout(() => $("shareSaved").textContent = "", 1500);
+      }));
+  }
 }
 
 // ── 全局模式 / 一体机 ─────────────────────────────────────────────────────────

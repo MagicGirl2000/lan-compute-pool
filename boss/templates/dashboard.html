@@ -33,6 +33,19 @@
     <div class="hint">用法：任意一端的程序 <code>from pool_client import Pool; Pool(url).map("compute", items)</code> 即可把重计算撒给整池（见 examples/）。</div>
   </section>
 
+  <!-- 共享设置 beta0.3 -->
+  <section class="card span2">
+    <div class="card-h"><b>🔌 共享设置</b><small>可选是否把本机关键设备共享进算力池(关掉=不贡献也不占用)</small></div>
+    <div class="dev-res">
+      <label><input type="checkbox" class="share" data-k="share_cpu"> CPU<span class="hint">(多核并行)</span></label>
+      <label><input type="checkbox" class="share" data-k="share_gpu"> GPU</label>
+      <label><input type="checkbox" class="share" data-k="share_mem"> 内存</label>
+      <label><input type="checkbox" class="share" data-k="share_disk"> 硬盘<span class="hint">(缓存)</span></label>
+      <label><input type="checkbox" class="share" data-k="share_net"> 网络<span class="hint">(并行下载)</span></label>
+      <span id="shareSaved" class="hint"></span>
+    </div>
+  </section>
+
   <!-- 算力比例（核心可视化） -->
   <section class="card span2">
     <div class="card-h">

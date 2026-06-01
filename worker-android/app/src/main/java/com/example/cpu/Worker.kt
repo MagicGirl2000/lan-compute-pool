@@ -10,7 +10,7 @@ import java.security.MessageDigest
 import kotlin.math.sqrt
 
 private const val TAG = "CpuWorker"   // logcat 过滤用：adb logcat -s CpuWorker
-const val WORKER_VERSION = "beta-0.2" // 三端同步版本（协调端/安卓矿工/Windows矿工/老板）
+const val WORKER_VERSION = "beta-0.3" // 三端同步版本（协调端/安卓矿工/Windows矿工/老板）
 
 /**
  * 算力分享 worker 引擎。

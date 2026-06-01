@@ -50,7 +50,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        worker.stop()
+        // 不在这里 stop：前台服务在跑时，关掉界面/锁屏也要继续贡献(这正是 beta0.3 的目的)。
+        // 只有用户没开过服务(从没点开始)时才顺手停掉，避免泄漏。
+        if (!worker.running) worker.stop()
     }
 }
 
@@ -149,9 +151,20 @@ fun WorkerScreen(worker: Worker, deviceName: String) {
             }
 
             // 启停
+            val ctx = androidx.compose.ui.platform.LocalContext.current
             Button(
                 onClick = {
-                    if (running) worker.stop() else worker.start()
+                    if (running) {
+                        worker.stop()
+                        ctx.stopService(android.content.Intent(ctx, WorkerService::class.java))
+                    } else {
+                        // 前台服务保活 + WakeLock：锁屏后矿工不被冻，能交真活(真实工分)
+                        WorkerService.statusProvider = { worker.statusLine }
+                        worker.start()
+                        val si = android.content.Intent(ctx, WorkerService::class.java)
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+                            ctx.startForegroundService(si) else ctx.startService(si)
+                    }
                     running = worker.running
                 },
                 modifier = Modifier

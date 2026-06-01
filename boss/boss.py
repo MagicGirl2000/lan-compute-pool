@@ -70,15 +70,19 @@ def api_overview():
     """控制台主数据：PC 硬件画像+利用率、协调端在线设备、当前运行状态。"""
     coord = client.status()
     phones = []
+    billing = (coord or {}).get("billing", {}) if coord else {}
     if coord:
         for did, d in (coord.get("devices") or {}).items():
             if d.get("kind") == "phone" and d.get("online"):
                 r = d.get("resources") or {}
+                b = billing.get(did, {}) if isinstance(billing, dict) else {}
                 phones.append({"id": did, "name": d.get("name", did),
                                "level": d.get("level"), "cpu": r.get("cpu"),
                                "cpu_proc": r.get("cpu_proc"),
                                "mem": r.get("mem"), "cores": r.get("cores"),
-                               "battery": r.get("battery"), "charging": r.get("charging")})
+                               "battery": r.get("battery"), "charging": r.get("charging"),
+                               "credits": b.get("credits"), "reputation": b.get("reputation"),
+                               "checks_failed": b.get("checks_failed")})
     return jsonify({
         "profile": PROFILE,
         "util": hardware.utilization(),
@@ -89,6 +93,9 @@ def api_overview():
         "lan_ip": lan_ip(),
         "version": config.VERSION,
         "dev_caps": devacc.caps(),
+        "billing": billing,
+        "sharing": {k: CFG.get(k, True) for k in ("share_cpu", "share_gpu", "share_mem",
+                                                  "share_disk", "share_net")},
         "config": {k: CFG[k] for k in ("boss_port", "coordinator_url", "use_local_pc",
                                        "enable_gpu", "model_backend", "shard_size")},
     })
@@ -192,12 +199,17 @@ def api_config():
     """更新部分配置（协调端地址/模型后端等），落盘。"""
     j = request.get_json(force=True, silent=True) or {}
     for k in ("coordinator_url", "model_backend", "model_path", "use_local_pc",
-              "enable_gpu", "shard_size", "benchmark_seconds"):
+              "enable_gpu", "shard_size", "benchmark_seconds",
+              "share_cpu", "share_gpu", "share_mem", "share_disk", "share_net"):
         if k in j:
             CFG[k] = j[k]
+    # 共享 CPU 的开关直接决定本机 PC 是否参与算力分担
+    if "share_cpu" in j:
+        CFG["use_local_pc"] = bool(j["share_cpu"])
     config.save(CFG)
     client.base = CFG["coordinator_url"].rstrip("/")
-    return jsonify({"ok": True, "config": CFG})
+    return jsonify({"ok": True, "config": CFG, "sharing": {
+        k: CFG.get(k, True) for k in ("share_cpu", "share_gpu", "share_mem", "share_disk", "share_net")}})
 
 
 if __name__ == "__main__":
