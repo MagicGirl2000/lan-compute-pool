@@ -19,6 +19,9 @@ try:
 except ImportError:
     psutil = None
 
+# Windows 上不弹控制台窗口（否则每秒调 nvidia-smi 会闪窗）
+NO_WINDOW = 0x08000000 if os.name == "nt" else 0
+
 
 # ── GPU 探测 ──────────────────────────────────────────────────────────────────
 def _gpu_via_pynvml():
@@ -48,7 +51,7 @@ def _gpu_via_smi():
     try:
         out = subprocess.check_output(
             [exe, "--query-gpu=name,memory.total", "--format=csv,noheader,nounits"],
-            stderr=subprocess.DEVNULL, timeout=4).decode("utf-8", "ignore")
+            stderr=subprocess.DEVNULL, timeout=4, creationflags=NO_WINDOW).decode("utf-8", "ignore")
         gpus = []
         for i, line in enumerate(l for l in out.splitlines() if l.strip()):
             parts = [p.strip() for p in line.split(",")]
@@ -88,7 +91,7 @@ def gpu_utilization():
         o = subprocess.check_output(
             [exe, "--query-gpu=utilization.gpu,memory.used,memory.total",
              "--format=csv,noheader,nounits"], stderr=subprocess.DEVNULL,
-            timeout=4).decode("utf-8", "ignore")
+            timeout=4, creationflags=NO_WINDOW).decode("utf-8", "ignore")
         out = []
         for i, line in enumerate(l for l in o.splitlines() if l.strip()):
             a = [p.strip() for p in line.split(",")]

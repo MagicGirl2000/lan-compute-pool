@@ -7,9 +7,12 @@
 
 与算力任务的 ProcessPool 不同——那是并行算数，这是跑命令看输出。
 """
+import os
 import subprocess
 import threading
 import time
+
+NO_WINDOW = 0x08000000 if os.name == "nt" else 0   # 不弹控制台窗口
 
 
 class CommandRun:
@@ -45,7 +48,8 @@ class CommandRun:
             self._proc = subprocess.Popen(
                 self.argv, cwd=self.cwd, env=self.env,
                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                bufsize=1, universal_newlines=True, encoding="utf-8", errors="replace")
+                bufsize=1, universal_newlines=True, encoding="utf-8", errors="replace",
+                creationflags=NO_WINDOW)
             for line in self._proc.stdout:
                 self._add(line.rstrip("\n"))
             self._proc.wait()
