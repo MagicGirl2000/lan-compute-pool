@@ -86,8 +86,8 @@ class BossGUI:
     def _build(self):
         self.root.title("算力老板 · Compute Boss")
         self.root.configure(bg=BG)
-        self.root.geometry("980x860")
-        self.root.minsize(900, 760)
+        self.root.geometry("1000x900")
+        self.root.minsize(880, 600)
 
         # 顶栏
         top = tk.Frame(self.root, bg="#141b2a")
@@ -104,27 +104,41 @@ class BossGUI:
                                  font=("Segoe UI", 9))
         self.lb_coord.pack(side="right")
 
-        body = tk.Frame(self.root, bg=BG)
-        body.pack(fill="both", expand=True, padx=12, pady=10)
+        # —— 可滚动主体（卡片很多，必须能滚，否则下半部分被截断）——
+        outer = tk.Frame(self.root, bg=BG)
+        outer.pack(fill="both", expand=True)
+        canvas = tk.Canvas(outer, bg=BG, highlightthickness=0)
+        vsb = tk.Scrollbar(outer, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=vsb.set)
+        vsb.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="both", expand=True)
+        body = tk.Frame(canvas, bg=BG)
+        win = canvas.create_window((0, 0), window=body, anchor="nw")
+        canvas.bind("<Configure>", lambda e: canvas.itemconfig(win, width=e.width))
+        body.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        # 鼠标滚轮（Windows）
+        canvas.bind_all("<MouseWheel>", lambda e: canvas.yview_scroll(int(-e.delta / 120), "units"))
+        inner = tk.Frame(body, bg=BG)
+        inner.pack(fill="both", expand=True, padx=12, pady=10)
 
         # —— 上排：PC 硬件 | 手机 ——
-        rowh = tk.Frame(body, bg=BG)
+        rowh = tk.Frame(inner, bg=BG)
         rowh.pack(fill="x")
         self._card_pc(rowh)
         self._card_phones(rowh)
 
         # —— 全局模式 / 一体机 ——
-        self._card_global(body)
+        self._card_global(inner)
         # —— 算力比例 ——
-        self._card_ratio(body)
+        self._card_ratio(inner)
         # —— 项目运行 ——
-        self._card_runner(body)
+        self._card_runner(inner)
         # —— 进度 / 任务流 ——
-        self._card_progress(body)
+        self._card_progress(inner)
         # —— 开发任务加速 (beta0.2) ——
-        self._card_dev(body)
+        self._card_dev(inner)
         # —— 结果 / 日志 ——
-        self._card_output(body)
+        self._card_output(inner)
 
     def _card(self, parent, title, sub="", side=None, width=None):
         outer = tk.Frame(parent, bg=PANEL, highlightbackground=LINE,
