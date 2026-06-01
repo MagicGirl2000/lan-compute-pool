@@ -32,6 +32,8 @@
 
 ## 二、整体架构 / Architecture
 
+![架构图 Architecture](docs/architecture.svg)
+
 ```
         局域网 LAN (同一个 WiFi / 路由器)
  ┌────────────────────────────────────────────────────────────────────────┐
@@ -225,4 +227,5 @@ lan-compute-pool/
 ```
 
 ## 许可 / License
-个人学习与自用，原样提供，无担保。Provided as-is for personal use, no warranty.
+本项目采用 **MIT License**（见 [LICENSE](LICENSE)）。原样提供，无担保。
+Licensed under the **MIT License** (see [LICENSE](LICENSE)). Provided as-is, no warranty.
