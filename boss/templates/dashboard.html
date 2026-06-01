@@ -8,7 +8,7 @@
 </head>
 <body>
 <header>
-  <h1>⚡ 算力老板 <span class="sub">Compute Boss · 局域网算力编排</span></h1>
+  <h1>⚡ 算力老板 <span class="sub">Compute Boss · 局域网算力编排</span> <span id="verBadge" class="verbadge">beta 0.2</span></h1>
   <div class="status">
     <span id="coordDot" class="dot"></span>
     <span id="coordText">协调端…</span>
@@ -70,6 +70,42 @@
       <div><b>结果 / Result</b><pre id="runResult">—</pre></div>
       <div><b>调度日志 / Log</b><pre id="runLog">—</pre></div>
     </div>
+  </section>
+
+  <!-- 开发任务加速 beta0.2 -->
+  <section class="card span2">
+    <div class="card-h"><b>🛠 开发任务加速</b>
+      <small>加速 PyCharm 重活：并行计算 · 装库/装插件 · 构建APK · 一键部署真机</small>
+      <span id="devCaps" class="caps"></span></div>
+
+    <div class="dev-res">
+      <span class="res-lbl">资源共享：</span>
+      <label><input type="checkbox" class="res" value="cpu" checked> CPU</label>
+      <label><input type="checkbox" class="res" value="gpu"> GPU0<span class="hint">(含手机)</span></label>
+      <label><input type="checkbox" class="res" value="mem" checked> 内存</label>
+      <label><input type="checkbox" class="res" value="disk" checked> 硬盘<span class="hint">(缓存)</span></label>
+      <label><input type="checkbox" class="res" value="net" checked> 网络<span class="hint">(并行下载,含手机)</span></label>
+    </div>
+
+    <div class="dev-tasks">
+      <span class="res-lbl">任务：</span>
+      <label><input type="radio" name="devtask" value="parallel_compute" checked> PyCharm 并行计算</label>
+      <label><input type="radio" name="devtask" value="install_pip"> 装库 (pip)</label>
+      <label><input type="radio" name="devtask" value="install_plugin"> 装插件/下载</label>
+      <label><input type="radio" name="devtask" value="build_apk"> 构建 APK</label>
+      <label><input type="radio" name="devtask" value="deploy_apk"> 一键部署真机</label>
+      <label><input type="radio" name="devtask" value="update_workers"> 更新工人app</label>
+    </div>
+
+    <div id="devFields" class="dev-fields"></div>
+
+    <div class="runner">
+      <button id="btnDevRun" class="btn primary">运行</button>
+      <button id="btnDevCancel" class="btn danger" disabled>取消</button>
+      <span id="devStat" class="pill">空闲</span>
+      <span id="devMetrics" class="hint"></span>
+    </div>
+    <pre id="devLog" class="devlog">—</pre>
   </section>
 </main>
 

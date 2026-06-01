@@ -10,6 +10,7 @@ import java.security.MessageDigest
 import kotlin.math.sqrt
 
 private const val TAG = "CpuWorker"   // logcat 过滤用：adb logcat -s CpuWorker
+const val WORKER_VERSION = "beta-0.2" // 三端同步版本（协调端/安卓矿工/Windows矿工/老板）
 
 /**
  * 算力分享 worker 引擎。
@@ -17,10 +18,11 @@ private const val TAG = "CpuWorker"   // logcat 过滤用：adb logcat -s CpuWor
  * 全程受 Safety 守门：RED 不接活、只心跳；YELLOW 只接 small。
  *
  * 内置任务类型（演示 + 真能加速你项目的活）：
- *   - "echo"    回显（连通性测试）
- *   - "hash"    批量 SHA-256（CPU 密集，适合分布式）
- *   - "prime"   素数计数（纯 CPU 算力 benchmark）
- *   - "compute" 通用数值计算（payload.iterations 控制量）
+ *   - "echo"     回显（连通性测试）
+ *   - "hash"     批量 SHA-256（CPU 密集，适合分布式）
+ *   - "prime"    素数计数（纯 CPU 算力 benchmark）
+ *   - "compute"  通用数值计算（payload.iterations 控制量）
+ *   - "download" 【beta0.2】并行预取：下载 url 并校验，手机以带宽参与"装库/装插件"加速
  * 你项目的真实任务(转码切片/批处理)按同样模式加 case 即可。
  */
 class Worker(
@@ -136,6 +138,34 @@ class Worker(
                 for (i in 0 until iters) acc += sqrt((i % 1000 + 1).toDouble())
                 out.put("acc", acc); out.put("iterations", iters)
             }
+            "download" -> {
+                // 【beta0.2】并行预取：下载 url、校验、测速。手机贡献带宽参与"装库/装插件"加速。
+                val url = p.optString("url", "")
+                val t0 = System.currentTimeMillis()
+                var size = 0L
+                val md = MessageDigest.getInstance("SHA-256")
+                try {
+                    val conn = URL(url).openConnection() as HttpURLConnection
+                    conn.connectTimeout = 8000; conn.readTimeout = 60000
+                    conn.setRequestProperty("Connection", "close")
+                    conn.inputStream.use { ins ->
+                        val buf = ByteArray(65536)
+                        while (true) {
+                            val n = ins.read(buf); if (n < 0) break
+                            md.update(buf, 0, n); size += n
+                        }
+                    }
+                    conn.disconnect()
+                    netSessionMb += size / 1048576.0
+                    val ms = System.currentTimeMillis() - t0
+                    out.put("url", url); out.put("size", size)
+                    out.put("sha256", md.digest().joinToString("") { "%02x".format(it) }.take(16))
+                    out.put("ms", ms)
+                    out.put("kbps", if (ms > 0) size / 1024.0 / (ms / 1000.0) else 0.0)
+                } catch (e: Exception) {
+                    out.put("url", url); out.put("error", e.message ?: "download failed")
+                }
+            }
             else -> out.put("warn", "unknown job type: $type")
         }
         return out
@@ -148,12 +178,18 @@ class Worker(
         put("kind", "phone")
         put("net_session_mb", netSessionMb)
         put("resources", JSONObject().apply {
-            put("cpu", res.cpu); put("mem", res.mem); put("mem_free_mb", res.memFreeMb)
+            put("cpu", res.cpu); put("cpu_proc", res.cpuProc); put("mem", res.mem); put("mem_free_mb", res.memFreeMb)
             put("mem_total_mb", res.memTotalMb); put("cores", res.cores)
             put("battery", res.battery); put("charging", res.charging)
             res.temp?.let { put("temp", it) }
         })
-        put("caps", JSONObject().apply { put("cpu", true); put("hash", true) })
+        put("caps", JSONObject().apply {
+            put("cpu", true); put("hash", true)
+            put("download", true)   // 能并行预取（贡献带宽）
+            put("build", false)     // 手机无 Android SDK/JDK，不能编译 APK
+            put("python", false)    // 不能装 x86 wheel
+        })
+        put("ver", WORKER_VERSION)
     }
 
     private fun register(res: Resources, lvl: Level) {

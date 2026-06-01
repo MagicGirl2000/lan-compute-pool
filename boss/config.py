@@ -10,6 +10,8 @@ import json
 HERE = os.path.dirname(os.path.abspath(__file__))
 CONFIG_FILE = os.path.join(HERE, "boss_config.json")
 
+VERSION = "beta-0.2"   # 三端同步版本（协调端 / 安卓矿工 / Windows矿工 / 老板）
+
 DEFAULTS = {
     # 老板自己的 Web 控制台端口
     "boss_port": 8000,
@@ -33,6 +35,18 @@ DEFAULTS = {
     "shard_size": 64,
     # 轮询协调端任务结果的间隔（秒）
     "poll_interval": 1.0,
+
+    # ── beta0.2 开发任务加速 ──
+    # 共享缓存根目录（wheelhouse / gradle 缓存 / 插件 都放这）
+    "cache_dir": os.path.join(HERE, "cache"),
+    # Gradle 共享缓存目录（构建缓存命中→重复构建快）
+    "gradle_home": os.path.join(HERE, "cache", "gradle"),
+    # adb 路径（多端部署/装真机用；空=从 PATH 找）
+    "adb_path": "",
+    # 默认安卓工程目录（构建 APK / 一键部署用；空=每次填）
+    "apk_project_dir": "",
+    # 工人 app 最新 APK 路径（自动更新工人用）
+    "worker_apk_path": "",
 }
 
 

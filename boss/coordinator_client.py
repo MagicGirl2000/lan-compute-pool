@@ -47,12 +47,14 @@ class CoordinatorClient:
             out.append({"id": did, **d})
         return out
 
-    def submit(self, jtype, payload, weight="normal"):
-        """提交一个任务，返回 job_id（失败返回 None）。"""
+    def submit(self, jtype, payload, weight="normal", requires=None):
+        """提交一个任务，返回 job_id（失败返回 None）。
+        requires: 能力要求列表（如 ["download"]），协调端只把该任务派给具备能力的 worker。"""
         try:
-            r = requests.post(self.base + "/api/submit_job",
-                              json={"type": jtype, "payload": payload, "weight": weight},
-                              timeout=self.timeout)
+            body = {"type": jtype, "payload": payload, "weight": weight}
+            if requires:
+                body["requires"] = requires
+            r = requests.post(self.base + "/api/submit_job", json=body, timeout=self.timeout)
             return r.json().get("job_id")
         except Exception:
             return None

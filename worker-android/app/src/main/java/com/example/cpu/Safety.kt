@@ -14,7 +14,8 @@ import java.io.RandomAccessFile
  * 这是保护你手机的"刹车"——算力租用绝不能把手机跑到过热、耗光电、卡死。
  */
 data class Resources(
-    var cpu: Double = 0.0,        // CPU 占用率 %
+    var cpu: Double = 0.0,        // 系统 CPU 占用率 %（新系统受限多为0，仅用于阈值，不误伤）
+    var cpuProc: Double = 0.0,    // ★工人进程自身 CPU 占用 %（/proc/self/stat，恒可读，用于显示"在忙"）
     var mem: Double = 0.0,        // 内存占用率 %
     var memFreeMb: Double = 0.0,
     var memTotalMb: Double = 0.0,
@@ -64,8 +65,11 @@ object Safety {
             }
         } catch (_: Exception) {}
 
-        // CPU 占用：读 /proc/stat 两次差分（部分新系统受限，失败则 0）
+        // 系统 CPU：读 /proc/stat（新系统多受限→0；仅供阈值，不会因此误伤）
         r.cpu = readCpuPercent()
+        // ★工人进程自身 CPU：读 /proc/self/stat（恒可读）。计算时会接近单核满载=100%，
+        //   这样老板端/手机端都能看到"在忙"，不再永远 0%。
+        r.cpuProc = readProcCpuPercent()
         return r
     }
 
@@ -84,6 +88,30 @@ object Safety {
                 lastIdle = idle; lastTotal = total
                 if (dTotal <= 0) 0.0 else ((1.0 - dIdle.toDouble() / dTotal) * 100.0).coerceIn(0.0, 100.0)
             }
+        } catch (_: Exception) { 0.0 }
+    }
+
+    private var lastProcTicks = -1L
+    private var lastProcWallNs = 0L
+    /** 工人进程自身 CPU 占用 %（按单核满载=100% 截顶）。/proc/self/stat 恒可读。 */
+    private fun readProcCpuPercent(): Double {
+        return try {
+            val stat = RandomAccessFile("/proc/self/stat", "r").use { it.readLine() } ?: return 0.0
+            // comm(进程名)可能含空格/括号，从最后一个 ')' 之后开始切分
+            val after = stat.substring(stat.lastIndexOf(')') + 1).trim().split(Regex("\\s+"))
+            // 字段: state=第3项 → after[0]; utime=第14项 → after[11]; stime=第15项 → after[12]
+            val utime = after[11].toLong(); val stime = after[12].toLong()
+            val ticks = utime + stime
+            val nowNs = System.nanoTime()
+            if (lastProcTicks < 0) { lastProcTicks = ticks; lastProcWallNs = nowNs; return 0.0 }
+            val dTicks = ticks - lastProcTicks
+            val dWallNs = nowNs - lastProcWallNs
+            lastProcTicks = ticks; lastProcWallNs = nowNs
+            if (dWallNs <= 0 || dTicks < 0) return 0.0
+            val clkTck = 100.0   // Android USER_HZ 通常为 100
+            val cpuSec = dTicks / clkTck
+            val wallSec = dWallNs / 1e9
+            ((cpuSec / wallSec) * 100.0).coerceIn(0.0, 100.0)
         } catch (_: Exception) { 0.0 }
     }
 

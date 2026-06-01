@@ -30,6 +30,7 @@ from capability import CapabilityAssessor
 from executor import LocalExecutor
 import projects as projects_mod
 from scheduler import Scheduler
+from devtasks import DevAccelerator
 
 # ── 配色（深色主题）──
 BG = "#0d1118"; PANEL = "#161c28"; PANEL2 = "#1d2533"; LINE = "#2a3344"
@@ -65,6 +66,7 @@ class BossGUI:
         self.catalog = projects_mod.catalog(self.cfg)
         self.scheduler = Scheduler(self.cfg, self.client, self.assessor,
                                    self.executor, self.projects)
+        self.devacc = DevAccelerator(self.cfg, self.client, self.scheduler)
         self.profile = hardware.profile()
         # ── 后台轮询共享状态 ──
         self.state = {"util": hardware.utilization(), "coord": None}
@@ -92,6 +94,8 @@ class BossGUI:
                  font=("Segoe UI", 16, "bold")).pack(side="left", padx=14, pady=10)
         tk.Label(top, text="局域网算力编排", bg="#141b2a", fg=MUT,
                  font=("Segoe UI", 9)).pack(side="left")
+        tk.Label(top, text=" %s " % config.VERSION, bg=ACC2, fg="#06101f",
+                 font=("Segoe UI", 8, "bold")).pack(side="left", padx=6)
         self.lb_lan = tk.Label(top, text="", bg="#141b2a", fg=MUT, font=("Segoe UI", 9))
         self.lb_lan.pack(side="right", padx=10)
         self.lb_coord = tk.Label(top, text="协调端…", bg="#141b2a", fg=MUT,
@@ -113,6 +117,8 @@ class BossGUI:
         self._card_runner(body)
         # —— 进度 / 任务流 ——
         self._card_progress(body)
+        # —— 开发任务加速 (beta0.2) ——
+        self._card_dev(body)
         # —— 结果 / 日志 ——
         self._card_output(body)
 
@@ -212,6 +218,86 @@ class BossGUI:
         self.lb_runstat.pack(anchor="w", pady=(6, 4))
         self.cv_flow = tk.Canvas(inner, bg=PANEL, height=10, highlightthickness=0)
         self.cv_flow.pack(fill="x")
+
+    DEV_DEFAULTS = {
+        "parallel_compute": '{"project":"prime_scan","params":{"limit":2000000,"chunk":50000}}',
+        "install_pip": '{"packages":"numpy pandas requests"}',
+        "install_plugin": '{"urls":"https://.../a.zip https://.../b.jar"}',
+        "build_apk": '{"project_dir":"D:\\\\proj\\\\MyApp","task":"assembleDebug"}',
+        "deploy_apk": '{"apk":"","project_dir":"D:\\\\proj\\\\MyApp"}',
+        "update_workers": '{"worker_apk":"D:\\\\...\\\\app-release.apk"}',
+    }
+    DEV_LABELS = [
+        ("parallel_compute", "并行计算"), ("install_pip", "装库(pip)"),
+        ("install_plugin", "装插件/下载"), ("build_apk", "构建APK"),
+        ("deploy_apk", "部署真机"), ("update_workers", "更新工人app"),
+    ]
+
+    def _card_dev(self, parent):
+        _, head, inner = self._card(parent, "🛠 开发任务加速",
+                                    "并行计算 · 装库/装插件 · 构建APK · 一键部署真机")
+        self.dev_caps_lb = tk.Label(head, text="", bg=PANEL, fg=MUT, font=("Segoe UI", 8))
+        self.dev_caps_lb.pack(side="right")
+        # 资源勾选
+        resrow = tk.Frame(inner, bg=PANEL)
+        resrow.pack(fill="x")
+        tk.Label(resrow, text="资源共享:", bg=PANEL, fg=MUT, font=("Segoe UI", 9)).pack(side="left")
+        self.res_vars = {}
+        for key, label, dflt in [("cpu", "CPU", 1), ("gpu", "GPU(含手机)", 0),
+                                 ("mem", "内存", 1), ("disk", "硬盘", 1), ("net", "网络", 1)]:
+            v = tk.IntVar(value=dflt)
+            self.res_vars[key] = v
+            tk.Checkbutton(resrow, text=label, variable=v, bg=PANEL, fg=TXT,
+                           selectcolor=PANEL2, activebackground=PANEL, activeforeground=TXT,
+                           font=("Segoe UI", 9)).pack(side="left", padx=4)
+        # 任务选择 + 参数 + 按钮
+        row = tk.Frame(inner, bg=PANEL)
+        row.pack(fill="x", pady=(6, 0))
+        self.dev_task_var = tk.StringVar(value="parallel_compute")
+        names = [n for _, n in self.DEV_LABELS]
+        self.dev_keys = [k for k, _ in self.DEV_LABELS]
+        self.dev_cmb = ttk.Combobox(row, values=names, state="readonly", width=14)
+        self.dev_cmb.current(0)
+        self.dev_cmb.pack(side="left")
+        self.dev_cmb.bind("<<ComboboxSelected>>", lambda e: self._dev_fill())
+        self.dev_params = tk.Entry(row, bg=PANEL2, fg=TXT, insertbackground=TXT,
+                                   relief="flat", font=("Consolas", 9))
+        self.dev_params.pack(side="left", fill="x", expand=True, padx=8, ipady=3)
+        self.btn_dev = tk.Button(row, text="运行", command=self.on_dev_run, bg=ACC,
+                                 fg="#06101f", relief="flat", font=("Segoe UI", 9, "bold"),
+                                 cursor="hand2")
+        self.btn_dev.pack(side="left")
+        self.btn_dev_cancel = tk.Button(row, text="取消", command=self.on_dev_cancel,
+                                        bg="#3a1d22", fg="#ff9b9b", relief="flat",
+                                        font=("Segoe UI", 9), cursor="hand2", state="disabled")
+        self.btn_dev_cancel.pack(side="left", padx=(6, 0))
+        self.dev_stat = tk.Label(inner, text="空闲", bg=PANEL, fg=MUT, font=("Segoe UI", 9))
+        self.dev_stat.pack(anchor="w", pady=(6, 2))
+        self.dev_log = tk.Text(inner, bg=BG, fg=MUT, height=7, relief="flat",
+                               font=("Consolas", 9), wrap="word")
+        self.dev_log.pack(fill="both", expand=True)
+        self._dev_fill()
+
+    def _dev_fill(self):
+        key = self.dev_keys[self.dev_cmb.current()]
+        self.dev_task_var.set(key)
+        self.dev_params.delete(0, "end")
+        self.dev_params.insert(0, self.DEV_DEFAULTS.get(key, "{}"))
+
+    def on_dev_run(self):
+        key = self.dev_keys[self.dev_cmb.current()]
+        try:
+            params = json.loads(self.dev_params.get() or "{}")
+        except Exception:
+            self.dev_stat.config(text="参数 JSON 格式错误", fg=R)
+            return
+        resources = {k: bool(v.get()) for k, v in self.res_vars.items()}
+        ok, msg = self.devacc.start(key, params, resources)
+        if not ok:
+            self.dev_stat.config(text="启动失败：%s" % msg, fg=R)
+
+    def on_dev_cancel(self):
+        self.devacc.cancel()
 
     def _card_output(self, parent):
         outer = tk.Frame(parent, bg=BG)
@@ -466,7 +552,38 @@ class BossGUI:
             self._settext(self.txt_log, "\n".join(
                 "[%ss] %s" % (l["t"], l["msg"]) for l in run.get("log", [])) or "—")
 
+        # 开发任务加速面板
+        try:
+            self._refresh_dev()
+        except Exception:
+            pass
+
         self.root.after(500, self._refresh)
+
+    def _refresh_dev(self):
+        c = self.devacc.caps()
+        self.dev_caps_lb.config(text="本机: %s · %s · pip · 下载" % (
+            "✓构建APK" if c.get("build") else "✗无SDK",
+            "✓adb" if c.get("adb") else "✗无adb"))
+        s = self.devacc.snapshot()
+        st = s.get("status", "idle")
+        busy = self.devacc.is_busy()
+        self.btn_dev.config(state="disabled" if busy else "normal")
+        self.btn_dev_cancel.config(state="normal" if busy else "disabled")
+        label = {"idle": "空闲", "running": "运行中", "done": "完成 ✓",
+                 "error": "出错", "cancelled": "已取消"}.get(st, st)
+        m = s.get("metrics", {})
+        parts = []
+        if s.get("elapsed_s"):
+            parts.append("%ss" % s["elapsed_s"])
+        for k, fmt in [("download_s", "下载%ss"), ("install_s", "安装%ss"),
+                       ("wall_s", "构建%ss"), ("files", "下载%d个"),
+                       ("apks", "APK×%d"), ("wheelhouse_files", "wheelhouse%d")]:
+            if m.get(k) is not None:
+                parts.append(fmt % m[k])
+        self.dev_stat.config(text="状态：%s  %s" % (label, "  ".join(parts)),
+                             fg=(G if st in ("running", "done") else R if st == "error" else MUT))
+        self._settext(self.dev_log, "\n".join(s.get("log", [])) or "—")
 
     def _settext(self, w, s):
         if w.get("1.0", "end-1c") == s:

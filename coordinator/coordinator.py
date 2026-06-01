@@ -32,6 +32,7 @@ import safety
 
 app = Flask(__name__)
 
+VERSION = "beta-0.2"   # 三端同步版本号（协调端 / 安卓矿工 / Windows矿工 / 老板）
 PORT = int(os.environ.get("CC_PORT", "9000"))
 DATA_DIR = os.path.dirname(os.path.abspath(__file__))
 STATE_FILE = os.path.join(DATA_DIR, "cc_state.json")
@@ -155,6 +156,9 @@ def api_pull_job():
     if level == "RED":
         return jsonify({"ok": True, "job": None, "level": level,
                         "reasons": reasons, "paused": True})
+    # worker 能力（caps）：用于按能力路由任务。download 类谁都能接；
+    # build/python 类只发给具备该能力的设备（手机没 SDK 就不会派到 build APK）。
+    worker_caps = set(k for k, v in (j.get("caps") or {}).items() if v)
     with _lock:
         job = None
         for jb in _state["jobs"]:
@@ -162,6 +166,10 @@ def api_pull_job():
                 continue
             # YELLOW 档只接 small 任务
             if level == "YELLOW" and jb.get("weight", "normal") != "small":
+                continue
+            # 能力匹配：任务声明的 requires 必须被 worker 的 caps 全覆盖
+            reqs = set(jb.get("requires") or [])
+            if reqs and not reqs.issubset(worker_caps):
                 continue
             jb["status"] = "running"
             jb["worker"] = did
@@ -207,6 +215,7 @@ def api_submit_job():
             "type": j.get("type", "echo"),
             "payload": j.get("payload", {}),
             "weight": j.get("weight", "normal"),
+            "requires": j.get("requires", []),   # 能力要求,如 ["download"] / ["build"]
             "status": "queued",
             "created": _ts(),
             "worker": None,
@@ -238,7 +247,12 @@ def api_status():
     return jsonify({"devices": devices, "jobs": jobs, "billing": billing,
                     "local": local, "local_level": local_level,
                     "local_reasons": local_reasons, "thresholds": _thresholds,
-                    "prices": PRICES})
+                    "prices": PRICES, "version": VERSION})
+
+
+@app.route("/api/version")
+def api_version():
+    return jsonify({"version": VERSION})
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -311,7 +325,7 @@ tick(); setInterval(tick,2000);
 if __name__ == "__main__":
     _load()
     print("=" * 60)
-    print(" 分布式算力协调端  http://0.0.0.0:%d" % PORT)
+    print(" 分布式算力协调端 (%s) http://0.0.0.0:%d" % (VERSION, PORT))
     print(" 看板: http://127.0.0.1:%d/dashboard" % PORT)
     print(" 手机 worker 连: http://<本机局域网IP>:%d" % PORT)
     print(" 安全阈值:", _thresholds["cpu_red"], "CPU%/",

@@ -25,6 +25,7 @@ from capability import CapabilityAssessor
 from executor import LocalExecutor
 import projects as projects_mod
 from scheduler import Scheduler
+from devtasks import DevAccelerator
 
 CFG = config.load()
 
@@ -35,6 +36,7 @@ assessor = CapabilityAssessor(CFG, client)
 local_exec = LocalExecutor(CFG.get("pc_max_workers"))
 PROJECTS = projects_mod.registry(CFG)
 scheduler = Scheduler(CFG, client, assessor, local_exec, PROJECTS)
+devacc = DevAccelerator(CFG, client, scheduler)
 
 PROFILE = hardware.profile()
 
@@ -72,6 +74,7 @@ def api_overview():
                 r = d.get("resources") or {}
                 phones.append({"id": did, "name": d.get("name", did),
                                "level": d.get("level"), "cpu": r.get("cpu"),
+                               "cpu_proc": r.get("cpu_proc"),
                                "mem": r.get("mem"), "cores": r.get("cores"),
                                "battery": r.get("battery"), "charging": r.get("charging")})
     return jsonify({
@@ -82,6 +85,8 @@ def api_overview():
         "run": scheduler.run.snapshot() if scheduler.run else None,
         "busy": scheduler.is_busy(),
         "lan_ip": lan_ip(),
+        "version": config.VERSION,
+        "dev_caps": devacc.caps(),
         "config": {k: CFG[k] for k in ("boss_port", "coordinator_url", "use_local_pc",
                                        "enable_gpu", "model_backend", "shard_size")},
     })
@@ -118,6 +123,27 @@ def api_run_status():
 @app.route("/api/cancel", methods=["POST"])
 def api_cancel():
     scheduler.cancel()
+    return jsonify({"ok": True})
+
+
+# ── beta0.2 开发任务加速 ──
+@app.route("/api/dev/run", methods=["POST"])
+def api_dev_run():
+    """启动开发任务。body: {task, params{}, resources{cpu,gpu,mem,disk,net}}"""
+    j = request.get_json(force=True, silent=True) or {}
+    ok, msg = devacc.start(j.get("task", "install_pip"), j.get("params", {}),
+                           j.get("resources"))
+    return jsonify({"ok": ok, "msg": msg})
+
+
+@app.route("/api/dev/status")
+def api_dev_status():
+    return jsonify(devacc.snapshot())
+
+
+@app.route("/api/dev/cancel", methods=["POST"])
+def api_dev_cancel():
+    devacc.cancel()
     return jsonify({"ok": True})
 
 
