@@ -31,6 +31,7 @@ from executor import LocalExecutor
 import projects as projects_mod
 from scheduler import Scheduler
 from devtasks import DevAccelerator
+from globalmode import GlobalMode
 
 # ── 配色（深色主题）──
 BG = "#0d1118"; PANEL = "#161c28"; PANEL2 = "#1d2533"; LINE = "#2a3344"
@@ -68,6 +69,7 @@ class BossGUI:
                                    self.executor, self.projects)
         self.devacc = DevAccelerator(self.cfg, self.client, self.scheduler)
         self.profile = hardware.profile()
+        self.glob = GlobalMode(self.cfg, self.client, self.profile)
         # ── 后台轮询共享状态 ──
         self.state = {"util": hardware.utilization(), "coord": None}
         self.last_ratio = {}     # 上次评估的比例（设备 -> dict）
@@ -111,6 +113,8 @@ class BossGUI:
         self._card_pc(rowh)
         self._card_phones(rowh)
 
+        # —— 全局模式 / 一体机 ——
+        self._card_global(body)
         # —— 算力比例 ——
         self._card_ratio(body)
         # —— 项目运行 ——
@@ -166,6 +170,68 @@ class BossGUI:
                                        font=("Segoe UI", 9), justify="left", wraplength=420)
         self.lb_phone_empty.pack(anchor="w")
         self._phone_widgets = []
+
+    def _card_global(self, parent):
+        _, head, inner = self._card(parent, "🧊 全局模式 · 一体机",
+                                    "PC+手机+模拟器 抽象成一台机：空闲端帮忙，忙的端把重活交出去")
+        self.btn_global = tk.Button(head, text="全局模式：关", command=self.on_global_toggle,
+                                    bg=PANEL2, fg=TXT, relief="flat", font=("Segoe UI", 9),
+                                    cursor="hand2", activebackground=G)
+        self.btn_global.pack(side="right")
+        # 一体机合计指标
+        mrow = tk.Frame(inner, bg=PANEL)
+        mrow.pack(fill="x")
+        self.om_vars = {}
+        for key, label in [("cores", "逻辑核"), ("mem", "GB内存"), ("gpu", "GPU"),
+                           ("nodes", "节点"), ("idle", "空闲核·可助")]:
+            cell = tk.Frame(mrow, bg=PANEL2, highlightbackground=LINE, highlightthickness=1)
+            cell.pack(side="left", fill="both", expand=True, padx=3)
+            v = tk.Label(cell, text="0", bg=PANEL2, fg=ACC, font=("Segoe UI", 20, "bold"))
+            v.pack(pady=(8, 0))
+            tk.Label(cell, text=label, bg=PANEL2, fg=MUT, font=("Segoe UI", 8)).pack(pady=(0, 8))
+            self.om_vars[key] = v
+        # 节点角色列表
+        self.om_nodes = tk.Frame(inner, bg=PANEL)
+        self.om_nodes.pack(fill="x", pady=(8, 0))
+        self._om_node_widgets = []
+        tk.Label(inner, text="用法：任意程序  from pool_client import Pool;  "
+                             "Pool(url).map(\"compute\", items)  即可把重计算撒给整池（见 examples/）",
+                 bg=PANEL, fg=MUT, font=("Segoe UI", 8), wraplength=900,
+                 justify="left").pack(anchor="w", pady=(6, 0))
+
+    def on_global_toggle(self):
+        on = self.glob.toggle()
+        self.cfg["global_mode"] = on
+        try:
+            config.save(self.cfg)
+        except Exception:
+            pass
+
+    def _refresh_global(self):
+        g = self.glob.status()
+        self.btn_global.config(
+            text="全局模式：" + ("开" if g["on"] else "关"),
+            bg=(G if g["on"] else PANEL2), fg=("#06101f" if g["on"] else TXT))
+        self.om_vars["cores"].config(text=str(g["total_cores"]))
+        self.om_vars["mem"].config(text=str(g["total_mem_gb"]))
+        self.om_vars["gpu"].config(text=str(g["total_gpu"]))
+        self.om_vars["nodes"].config(text=str(g["node_count"]))
+        self.om_vars["idle"].config(text=str(g["idle_cores"]))
+        for w in self._om_node_widgets:
+            w.destroy()
+        self._om_node_widgets = []
+        for n in g["nodes"]:
+            fr = tk.Frame(self.om_nodes, bg=PANEL2)
+            fr.pack(side="left", padx=3, pady=2)
+            ic = "💻" if n["kind"] == "pc" else "📱"
+            tk.Label(fr, text="%s %s" % (ic, n["name"]), bg=PANEL2, fg=TXT,
+                     font=("Segoe UI", 9)).pack(side="left", padx=(8, 4), pady=4)
+            tk.Label(fr, text="%d核 %.1fGB" % (n["cores"], n["mem_gb"]), bg=PANEL2, fg=MUT,
+                     font=("Segoe UI", 8)).pack(side="left", padx=4)
+            busy = n["busy"]
+            tk.Label(fr, text=n["role"], bg=PANEL2, fg=(Y if busy else G),
+                     font=("Segoe UI", 8)).pack(side="left", padx=(4, 8))
+            self._om_node_widgets.append(fr)
 
     def _card_ratio(self, parent):
         _, head, inner = self._card(parent, "🧮 算力能力比例", "老板按此把任务分给各设备（强的多分）")
@@ -552,6 +618,11 @@ class BossGUI:
             self._settext(self.txt_log, "\n".join(
                 "[%ss] %s" % (l["t"], l["msg"]) for l in run.get("log", [])) or "—")
 
+        # 全局模式 / 一体机
+        try:
+            self._refresh_global()
+        except Exception:
+            pass
         # 开发任务加速面板
         try:
             self._refresh_dev()
