@@ -45,9 +45,12 @@ class Pool:
         return r.json().get("job_id")
 
     def _jobs(self, ids):
-        s = requests.get(self.url + "/api/status", timeout=10).json()
-        want = set(ids)
-        return {j["id"]: j for j in s.get("jobs", []) if j.get("id") in want}
+        ids = [i for i in ids if i]
+        if not ids:
+            return {}
+        # 用 /api/jobs 按 id 查（不受 status 只回最近50条限制，多分片才不丢结果）
+        r = requests.get(self.url + "/api/jobs", params={"ids": ",".join(ids)}, timeout=10).json()
+        return r.get("jobs", {})
 
     def offload(self, jtype, payload, requires=None, weight="normal"):
         """提交一个任务并阻塞等结果。返回 result（超时抛 TimeoutError）。"""

@@ -255,6 +255,15 @@ def api_version():
     return jsonify({"version": VERSION})
 
 
+@app.route("/api/jobs")
+def api_jobs():
+    """按 id 批量查任务（不受 /api/status 只回最近50条的限制）。?ids=J1,J2"""
+    want = set(i for i in (request.args.get("ids", "").split(",")) if i)
+    with _lock:
+        out = {j["id"]: j for j in _state["jobs"] if j["id"] in want}
+    return jsonify({"jobs": out})
+
+
 # ══════════════════════════════════════════════════════════════════════════
 #  看板（PC 浏览器）
 # ══════════════════════════════════════════════════════════════════════════

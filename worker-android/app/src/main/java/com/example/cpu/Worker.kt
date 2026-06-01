@@ -113,24 +113,27 @@ class Worker(
         when (type) {
             "echo" -> out.put("echo", p.optString("msg", ""))
             "hash" -> {
-                val n = p.optInt("count", 100000)
+                // 契约对齐老板 workloads：优先 rounds，兼容旧 count
+                val n = p.optInt("rounds", p.optInt("count", 100000))
                 val seed = p.optString("seed", "seed")
                 val md = MessageDigest.getInstance("SHA-256")
                 var h = seed.toByteArray()
                 for (i in 0 until n) h = md.digest(h)
-                out.put("hash", h.joinToString("") { "%02x".format(it) }.take(16))
+                out.put("digest", h.joinToString("") { "%02x".format(it) }.take(16))
                 out.put("rounds", n)
             }
             "prime" -> {
-                val limit = p.optInt("limit", 200000)
+                // 契约对齐老板 workloads：算区间 [lo,hi)；兼容旧 limit=[2,limit)
+                val lo = p.optInt("lo", 2)
+                val hi = p.optInt("hi", p.optInt("limit", 200000))
                 var cnt = 0
-                for (k in 2..limit) {
+                for (k in maxOf(2, lo) until hi) {
                     var isP = true
                     var d = 2
                     while (d <= sqrt(k.toDouble()).toInt()) { if (k % d == 0) { isP = false; break }; d++ }
                     if (isP) cnt++
                 }
-                out.put("primes", cnt); out.put("limit", limit)
+                out.put("primes", cnt); out.put("lo", lo); out.put("hi", hi)
             }
             "compute" -> {
                 val iters = p.optInt("iterations", 1_000_000)

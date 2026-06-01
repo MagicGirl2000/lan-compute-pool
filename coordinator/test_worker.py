@@ -44,18 +44,20 @@ base = {"device_id": DID, "name": "Windows矿工", "kind": "pc", "net_session_mb
 def run_job(job):
     t = job["type"]; p = job.get("payload", {})
     if t == "prime":
-        lim = p.get("limit", 100000); c = 0
-        for k in range(2, lim + 1):
+        # 契约对齐老板 workloads：算区间 [lo,hi)；兼容旧 limit
+        lo = int(p.get("lo", 2)); hi = int(p.get("hi", p.get("limit", 100000)))
+        c = 0
+        for k in range(max(2, lo), hi):
             isp = True; d = 2
             while d * d <= k:
                 if k % d == 0: isp = False; break
                 d += 1
             if isp: c += 1
-        return {"primes": c, "limit": lim}
+        return {"primes": c, "lo": lo, "hi": hi}
     if t == "hash":
-        n = p.get("count", p.get("rounds", 100000)); h = str(p.get("seed", "s")).encode()
+        n = p.get("rounds", p.get("count", 100000)); h = str(p.get("seed", "s")).encode()
         for _ in range(n): h = hashlib.sha256(h).digest()
-        return {"hash": h.hex()[:16], "rounds": n}
+        return {"digest": h.hex()[:16], "rounds": n}
     if t == "compute":
         it = p.get("iterations", 1000000); acc = 0.0
         for i in range(it): acc += math.sqrt((i % 1000) + 1)

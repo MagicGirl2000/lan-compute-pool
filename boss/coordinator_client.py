@@ -60,9 +60,14 @@ class CoordinatorClient:
             return None
 
     def job_results(self, job_ids):
-        """给一批 job_id，返回 {job_id: job_dict}（只含已知的）。"""
-        s = self.status()
-        if not s:
+        """给一批 job_id，返回 {job_id: job_dict}。用 /api/jobs 按 id 查，
+        不受 /api/status 只回最近50条的限制（多分片时不丢结果）。"""
+        ids = [i for i in job_ids if i]
+        if not ids:
             return {}
-        want = set(job_ids)
-        return {j["id"]: j for j in (s.get("jobs") or []) if j.get("id") in want}
+        try:
+            r = requests.get(self.base + "/api/jobs", params={"ids": ",".join(ids)},
+                             timeout=self.timeout)
+            return r.json().get("jobs", {})
+        except Exception:
+            return {}
