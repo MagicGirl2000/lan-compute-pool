@@ -1,325 +1,281 @@
-# LAN Compute Pool · 局域网算力共享池
+# 算力老板 · Compute Boss
 
-> 把你身边的设备（**一台 PC + 若干安卓手机**）组成一个**局域网分布式算力池**，
-> 按各设备算力**自动按比例分配**任务，加速**你自己的项目**（含**本地模型推理**）。
-> 全程受**安全阈值**保护，带**算力租用计费**与**可视化界面**。
+> 局域网分布式算力系统的 **"老板"** ——在"工人"(安卓算力 app + Windows 算力端)之上，
+> **评估手机与电脑的算力能力比例**，把项目(含**本地模型推理**)**按比例切分**、分发到
+> **电脑全部关键硬件 + 手机**，并提供**可视化控制台**。
 >
-> **English** — Turn the devices around you (**one PC + several Android phones**) into a
-> **LAN distributed compute pool** that **auto-splits work proportionally** to each device's
-> capability, to accelerate **your own** projects (including **local-model inference**), guarded
-> by **safety thresholds**, with **compute-rental billing** and **visual UIs**.
-
-> ⚠️ **现实说明**：这是**你自己的**局域网算力池，加速**你自己的**项目。它**不能**把算力
-> 贡献给 Claude / Anthropic 换取额度或优惠券——那种通道在现实中不存在。
-> This is **your own** LAN pool for **your own** projects; it **cannot** earn Claude/Anthropic
-> credits — no such channel exists.
+> **English** — The **"boss"** of a LAN compute pool. Above the *workers* (the Android
+> compute app + the Windows compute node), it **measures the phone-vs-PC capability ratio**,
+> then **splits projects proportionally** (including **local-model inference**) across **all
+> the PC's key hardware + the phones**, with a **visual web console**.
 
 ---
 
-## 一、三个组件 / Three components
+## 一、它在系统里的位置 / Where it sits
 
-> **版本 beta-0.3**（三端同步：协调端 / 安卓矿工 / Windows矿工 / 老板）。
-> 0.2 新增**开发任务加速**(加速 PyCharm 重活) + **能力路由** + **并行下载**（见第「十」节）；
-> 0.3 新增**真实工分**(抽检复算+信誉)、**锁屏续跑**、**可选共享**、**能效档位(挣钱速度档)**、
-> **中央越权设档**（老板=中央处理器，一键统一全网能效）（见第「十一/十二」节、[CHANGELOG.md](CHANGELOG.md)）。
->
-> 📖 **项目故事 / 设计哲学**：[STORY.md](STORY.md) —— 把各功能比喻成 1949–2026 的历史，
-> 诚实讲"集中力量办大事"的力量，与大跃进浮夸风/透支民力的教训，以及本系统为何把
-> **办大事的力量**和**防灾难的护栏（安全阈值不可越权 + 工分必经复算）**同时写进代码。
-
-本仓库把原来三个独立项目**合并**到一起，它们协同工作：
-
-| 目录 | 角色 | 技术 | 说明 |
-|---|---|---|---|
-| [`coordinator/`](coordinator/) | **协调端**（PC）| Python + Flask | 系统中枢：任务队列 + 设备心跳 + 安全阈值 + 计费 + 看板。手机/PC worker 都连它。|
-| [`worker-android/`](worker-android/) | **安卓工人** | Kotlin + Compose | 手机当 worker，连协调端贡献算力。|
-| [`boss/`](boss/) | **算力老板** | Python + Flask/Tkinter | 站在协调端之上做**项目级编排**：评估算力比例、按比例切分项目、调度 PC 全部关键硬件 + 手机、可视化。|
-
-> 各组件还有**自己的详细 README**（点上面目录链接）；本页讲**怎么把三者部署到一起、在局域网里跑通**。
-
----
-
-## 二、整体架构 / Architecture
-
-![架构图 Architecture](docs/architecture.svg)
+整个算力系统现在有 **三层**：
 
 ```
-        局域网 LAN (同一个 WiFi / 路由器)
- ┌────────────────────────────────────────────────────────────────────────┐
- │                                                                          │
- │   📱 安卓工人 (worker-android)          💻 PC                            │
- │   Kotlin app                            ┌─────────────────────────────┐  │
- │      │ HTTP 拉任务/交结果                │  协调端 coordinator  :9000   │  │
- │      └──────────────────────────────►   │  队列 + 心跳 + 阈值 + 计费    │  │
- │                                         └──────────────┬──────────────┘  │
- │                                            ▲           │ 提交"手机那份"   │
- │                                            │ 读状态     ▼                 │
- │                                         ┌─────────────────────────────┐  │
- │                                         │  算力老板 boss  :8000        │  │
- │                                         │  评估比例·切分·派发·合并·UI   │  │
- │                                         │  └─► PC 本地多核/GPU 引擎     │  │
- │                                         └─────────────────────────────┘  │
- └────────────────────────────────────────────────────────────────────────┘
+   工人 Workers                          老板 Boss (本项目)
+ ┌───────────────┐   HTTP    ┌────────────────────┐   ┌──────────────────────────┐
+ │ 安卓算力 app   │──────────►│                    │   │  算力老板  boss.py :8000   │
+ │ (Worker.kt)   │  拉任务    │   协调端 Coordinator│◄──┤  · 评估算力比例            │
+ ├───────────────┤◄──────────│   coordinator.py    │   │  · 按比例切分项目          │
+ │ Windows 算力端 │  交结果    │   :9000 任务队列     │──►│  · 派"手机那份"进队列       │
+ │ (test_worker) │           │   + 计费 + 安全阈值  │   │  · 自己吃满 PC 多核/GPU    │
+ └───────────────┘           └────────────────────┘   │  · 可视化控制台            │
+                                                        └──────────────────────────┘
 ```
 
-- **协调端**是唯一对外监听的服务（:9000），手机和老板都连它。
-- **老板**(:8000) 自己也跑在 PC 上：它读协调端状态、把"手机那一份"任务投进协调端队列、
-  "电脑那一份"用本地多核/GPU 引擎自己算，最后合并。
+- **工人**：贡献算力、执行单个任务。安卓 app 和 PC worker 都接在**协调端**上。
+- **协调端**(`D:\电脑算力租用包含安全阈值\coordinator.py`)：任务队列 + 心跳 + 计费 + 安全阈值。
+- **老板**(本项目)：**项目级编排**。它不取代协调端，而是**站在它之上**——评估谁强谁弱、
+  按比例切活、把手机那份丢进协调端队列让手机来拉、电脑那份自己用多核引擎吃满，最后合并结果。
+
+> Three layers: **Workers** execute single jobs and attach to the **Coordinator** (queue +
+> billing + safety). The **Boss** (this repo) does *project-level orchestration* on top:
+> assess capability, split by ratio, push the phone's share into the coordinator queue, run
+> the PC's share on a local multi-core engine, then merge.
 
 ---
 
-## 三、详细部署 / Deployment (step by step)
+## 二、按算力比例分配（核心思想）/ Proportional allocation
 
-### 0. 前置条件 / Prerequisites
-- **一台 Windows PC**：装 **Python 3.8+**（勾选 “Add to PATH”）。
-- **一台或多台安卓手机**（Android 5.0+ / API 21+）或安卓模拟器。
-- **PC 和手机在同一个局域网**（连同一个 WiFi / 路由器）。
-- 编译安卓 app 需 **Android Studio**（Giraffe+），或直接用已编好的 APK。
+1. **评估**：PC 本地真跑一段标准负载测吞吐；手机则**经协调端投一个标定任务**、测它从领取到
+   完成的耗时——得到每台设备的 **算力评分**(work-units/秒)。
+2. **比例**：`ratio[设备] = 评分 / Σ评分`。例如实测 **PC 96.5% : 手机 3.5%**。
+3. **切分**：项目拆成 N 个分片后，用**最大余数法**按比例给每台设备整数配额（强的多分、弱的少分），
+   交错下标分配让负载均匀。
+4. **派发**：PC 那份 → 本地多核引擎(`executor.py`)；手机那份 → 提交到协调端队列。
+5. **兜底**：手机分片若超时(掉线/电量低 RED)，老板自动用 PC 把它补算掉，**绝不卡死**。
 
-> 三个组件各自有独立的依赖，互不干扰；下面分别部署。
-
----
-
-### A. 部署「协调端」(PC) / Deploy the Coordinator
-
-协调端是中枢，**必须先启动**。
-
-```bat
-cd coordinator
-:: 1) 建虚拟环境 + 装依赖
-python -m venv .venv
-.venv\Scripts\python -m pip install flask psutil
-:: 2) 启动（一键脚本会先杀旧实例再启动，避免多实例抢 9000 端口）
-启动协调端.bat
-```
-
-启动后：
-- 监听 **`0.0.0.0:9000`**（局域网内都能连）。
-- PC 浏览器开 **http://127.0.0.1:9000/dashboard** 看实时看板。
-- 控制台会打印**本机局域网 IP**——手机就要连这个 IP。
-
-> 没有 `启动协调端.bat` 时手动跑：`.venv\Scripts\python coordinator.py`
-> 安全阈值/计费/API 细节见 [`coordinator/README.md`](coordinator/README.md) 与 [`coordinator/API.md`](coordinator/API.md)。
+> Assess → ratio → largest-remainder split → dispatch (PC local + phone via coordinator) →
+> PC-fallback for stalled phone shards → merge.
 
 ---
 
-### B. 部署「安卓工人」(手机) / Deploy the Android Worker
+## 三、关键硬件分担 / Using all key PC hardware
 
-**方式一：Android Studio 编译安装（推荐）**
-1. Android Studio 打开 `worker-android/` 目录，等 Gradle 同步完成。
-2. 手机用数据线连电脑并开 **USB 调试**（或用模拟器）。
-3. 点 ▶ Run 把 app 装到手机/模拟器。
+老板要"分配电脑所有关键硬件的分担任务"：
 
-**方式二：直接装 APK**（若你已有编好的 APK）：把 APK 传到手机点击安装。
+- **CPU**：`executor.py` 用 `ProcessPoolExecutor` 跨**全部物理核**并行（默认留 1 核给系统/UI）。
+- **GPU**：`hardware.py` 探测独显(pynvml→nvidia-smi)；纯逐元素负载放 GPU 反而慢，**GPU 留给
+  本地模型项目的真实后端**(`transformers`+`torch` 自动用 GPU)去吃。
+- **内存 / 磁盘 / 网络**：`hardware.utilization()` 实时读占用，控制台用条形图可视化；
+  安全阈值由协调端那层守门。
 
-**配置服务器地址**（app 内「PC 协调端地址」输入框）：
-- **真机（和 PC 同 WiFi）**：填 `http://<PC局域网IP>:9000`
-  （PC 上 `ipconfig` 看 IPv4，例如 `http://192.168.1.20:9000`）。
-- **安卓模拟器(AVD)**：填 `http://10.0.2.2:9000`
-  （`10.0.2.2` 是模拟器访问宿主机 PC 的固定地址，**不是** 192.168.x）。
-
-点「开始贡献算力」。此时协调端看板里应出现这台手机。
-> 更多（安全阈值、任务类型、排错）见 [`worker-android/README.md`](worker-android/README.md) 与 [`worker-android/API.md`](worker-android/API.md)。
+> CPU via a multi-core process pool; GPU detected and reserved for the real model backend;
+> RAM/disk/net shown live; safety gating handled by the coordinator layer.
 
 ---
 
-### C. 部署「算力老板」(PC) / Deploy the Boss
+## 四、内置项目 / Built-in projects (`projects.py`)
 
-老板也跑在 PC 上，**在协调端之后启动**。
+| key | 项目 | PC 执行 | 手机执行 | 说明 |
+|---|---|---|---|---|
+| `local_model` | **本地模型推理（数据并行）** | sim / llama_cpp / transformers | compute 折算 + 老板补文本 | 把一批 prompt 按算力比例分发到各设备做前向 |
+| `prime_scan` | 大区间素数统计 | prime | prime（原生） | 统计 [2,limit) 素数，分片并行 |
+| `hash_grind` | 批量 SHA-256 | hash | hash（原生） | 哈希链，CPU 密集 |
+| `montecarlo` | 蒙特卡洛估 π | montecarlo | —（仅 PC） | 撒点估 π；安卓 worker 无此原语，故 PC-only |
 
-```bat
-cd boss
-:: 1) 建虚拟环境 + 装依赖
-python -m venv .venv
-.venv\Scripts\python -m pip install -r requirements.txt
-:: 2) 两个界面二选一：
-启动老板GUI.bat      :: Windows 桌面 GUI（原生窗口，推荐）
-:: 或
-启动老板.bat         :: Web 控制台 → 浏览器开 http://127.0.0.1:8000
-```
-
-打开界面后：
-1. 点 **「重新评估算力」** → 出现 PC 与各手机的**算力比例条**。
-2. 选**项目**、填参数 JSON，点 **「开始加速」**。
-3. 实时看**每台设备的任务流**、进度、吞吐、结果。
-
-> 老板默认连 `http://127.0.0.1:9000` 的协调端；如协调端在别的机器，改 `boss/boss_config.json`
-> 的 `coordinator_url`。完整说明见 [`boss/README.md`](boss/README.md)。
+**关于"本地部署模型"**：默认 `model_backend="sim"` —— 用与 token 数成正比的运算**模拟**一次前向，
+**零依赖、开箱即跑**，真实体现按算力比例切分。要跑**真模型**：把 `boss_config.json` 的
+`model_backend` 改 `llama_cpp`(给 `model_path` 指向 gguf) 或 `transformers`(给模型名/目录，
+有 GPU 自动用)，真实后端**目前在 PC 分片生效**；手机分片承担等价的 compute 重活（真实 offload），
+老板补上回复文本。要让**手机也跑真模型**，需给安卓 worker 加一个 `model` 任务类型（见下"扩展"）。
 
 ---
 
-## 四、局域网配置要点 / LAN setup essentials
+## 五、快速开始 / Quick start
 
-### 1) 查 PC 的局域网 IP
-PC 上开 `cmd` 跑 `ipconfig`，找 **IPv4 地址**（类似 `192.168.x.x`）。手机填的就是它。
+老板有**两个界面，同一套后端**，按喜好选一个：
 
-### 2) 放行防火墙端口（关键，最常见的"连不上"原因）
-首次启动时 Windows 防火墙可能拦截。允许 Python 通过防火墙，或手动放行端口：
-```powershell
-# 以管理员身份运行 PowerShell
-New-NetFirewallRule -DisplayName "Coordinator 9000" -Direction Inbound -LocalPort 9000 -Protocol TCP -Action Allow
-New-NetFirewallRule -DisplayName "Boss 8000"        -Direction Inbound -LocalPort 8000 -Protocol TCP -Action Allow
-```
-
-### 3) 端口一览 / Ports
-| 服务 | 端口 | 监听 | 谁来连 |
-|---|---|---|---|
-| 协调端 Coordinator | **9000** | `0.0.0.0` | 手机 worker、算力老板 |
-| 算力老板 Boss | **8000** | `0.0.0.0` | 浏览器（Web 控制台）|
-
-### 4) 真机 vs 模拟器地址
-| 设备 | 协调端地址 |
-|---|---|
-| 真机（同 WiFi）| `http://<PC局域网IP>:9000` |
-| 安卓模拟器 AVD | `http://10.0.2.2:9000` |
-
-### 5) 连通性自检
-- 手机浏览器打开 `http://<PC局域网IP>:9000/dashboard`，能看到看板=网络通。
-- 模拟器：`adb shell ping 10.0.2.2` 通=链路正常。
-
----
-
-## 五、跑通一次完整流程 / End-to-end run
-
-```
-1. PC：启动协调端              coordinator/启动协调端.bat        (:9000)
-2. 手机：开 app 填 PC 的 IP:9000 → 开始贡献算力   → 协调端看板出现这台手机
-3. PC：启动老板                boss/启动老板GUI.bat              (:8000)
-4. 老板界面：点「重新评估算力」 → 看到 PC:手机 的算力比例
-5. 选项目(如"大区间素数统计") + 参数 → 点「开始加速」
-6. 看每台设备任务流实时推进 → 出结果；手机掉线/RED 时老板自动 PC 兜底
-```
-
-**选哪个项目能看到手机一起干？** `prime_scan`(素数) / `hash_grind`(哈希) 手机原生支持；
-`montecarlo`(估π) 目前仅 PC；`local_model`(本地模型) 手机承担等价 compute 重活。
-
----
-
-## 六、安全阈值 / Safety thresholds
-每台设备贡献前都先过阈值（GREEN 全速 / YELLOW 只接小任务 / RED 暂停）：
-CPU、内存、磁盘、温度、电量、空闲内存、会话流量。手机额外重视**电池温度/电量**，
-可开「仅充电时贡献」。阈值可在协调端 `safety.py` 或环境变量 `SAFE_*` 调整，
-并会下发同步到手机。详见 [`coordinator/README.md`](coordinator/README.md)。
-
-## 七、算力租用计费 / Billing
-协调端按 CPU 核·秒 / 内存 MB·时 / 磁盘 MB·时 / 流量 MB / GPU·秒 五类单价累计
-（记 `cc_billing.json`），可用于把你借出的算力折算成费用或抵租金。看板可见。
-
----
-
-## 八、常见问题 / Troubleshooting
-
-| 现象 | 原因 / 解决 |
-|---|---|
-| 手机连不上协调端 | ① 防火墙没放行 9000（见上）② 真机用 192.168.x，模拟器必须用 10.0.2.2 ③ 不在同一 WiFi |
-| 时连时断 | **多个 coordinator 实例抢 9000 端口** → 永远用 `启动协调端.bat`（先杀旧实例）|
-| 手机一直 RED 不接活 | 电量低 / 未充电（关「仅充电」）/ 内存紧张（小内存设备）。看 app 状态栏原因 |
-| 手机一直“YELLOW 暂无” | 资源吃紧只接 small，而派的是 normal → 派任务带 `"weight":"small"` |
-| 老板比例里没有手机 | 协调端没开 / 手机没在贡献 / 手机当时 RED。先确认看板里手机在线 |
-| 老板 GUI 多进程报错 | 已用 `freeze_support()` + 模块零副作用规避；务必从 `.venv` 的 python 启动 |
-
----
-
-## 九、仓库结构 / Layout
-```
-lan-compute-pool/
-├─ coordinator/      协调端 (Python/Flask) —— 先启动，:9000
-│  ├─ coordinator.py  safety.py  watchdog.py  test_worker.py
-│  ├─ 启动协调端.bat   README.md  API.md
-├─ worker-android/   安卓工人 (Kotlin/Compose) —— 手机端
-│  ├─ app/src/main/java/com/example/cpu/{Worker,Safety,MainActivity}.kt
-│  ├─ gradle/ gradlew settings.gradle  README.md  API.md
-├─ boss/             算力老板 (Python) —— :8000，编排 + 可视化
-│  ├─ boss.py(Web) boss_gui.py(桌面) scheduler.py capability.py …
-│  ├─ templates/ static/  启动老板.bat 启动老板GUI.bat  README.md
-└─ README.md         本文件（部署 + 局域网用法）
-```
-
-## 十、beta 0.2 新增：开发任务加速 / Dev Acceleration
-
-老板端新增「🛠 开发任务加速」面板，把 PyCharm 里很慢/很吃算力的操作交给算力池：
-
-| 任务 | 做什么 | 谁参与 |
+| 入口 | 启动 | 界面 |
 |---|---|---|
-| **并行计算** | 把计算型项目按算力比例分到 PC+手机 | PC + 手机 |
-| **装库 (pip)** | 多包**并行下载**到共享 wheelhouse，再离线安装（重复装秒过）| PC 多进程（勾"网络"则手机帮下）|
-| **装插件/下载** | 一批 URL **分发到池里并行下载**（贡献带宽）| PC + **手机** |
-| **构建 APK** | Gradle **共享构建缓存 + 并行**，实时日志 | 仅 PC（有 SDK）|
-| **一键部署真机** | `adb install -r` 到连接的真机 | PC + adb |
-| **更新工人app** | adb 把最新 worker APK 推装到设备 | PC + adb |
+| **Windows 桌面 GUI**（推荐，原生窗口、不用浏览器）| `启动老板GUI.bat` | `boss_gui.py`（Tkinter）|
+| **Web 控制台**（可远程/手机浏览器看）| `启动老板.bat` → http://127.0.0.1:8000 | `boss.py`（Flask）|
 
-**资源勾选**：界面可勾 ☑CPU ☑GPU(含手机) ☑内存 ☑硬盘(缓存) ☑网络(并行下载)，控制每个任务怎么用池子。
+```bat
+:: 1) （推荐）先启动协调端，让手机 worker 能接入
+D:\电脑算力租用包含安全阈值\启动协调端.bat
 
-**诚实边界**：手机无 Android SDK/JDK，**不能编译 APK**；它能真正帮上忙的是**并行下载**(贡献带宽)与**并行计算**。构建/部署落在有 SDK 的 PC / adb 连接的真机上。
+:: 2a) 桌面 GUI（自动建 venv / 装依赖 / 杀旧实例 / 开窗）
+启动老板GUI.bat
 
-**三端同步 v0.2**：
-- 协调端 `coordinator.py`：新增**能力路由**（任务 `requires` 只派给具备 `caps` 的设备）+ `/api/version`。
-- 矿工（安卓 `Worker.kt` / Windows `test_worker.py`）：新增 `download` 并行预取任务 + 上报 `caps`(cpu/hash/download；手机 build=false) + 版本。
-- 安卓 CPU 显示修复：旧版读全局 `/proc/stat` 被系统限制→永远 0%；改读**本进程 `/proc/self/stat`**(恒可读)，老板端/手机端都能看到"在忙"。
-
-> ⚠️ 矿工连的是**协调端 :9000**（不是老板 :8000）。手机填 `http://<PC局域网IP>:9000`。
-> 端口连不上多半是防火墙——见第「四」节放行 9000/8000。
-
-## 十一、全局模式 · 一体机 / Global Mode
-
-把 PC + 手机 + 模拟器在**软件层抽象成一台机器**：统一资源视图（合并核数/内存/GPU）、
-角色自动切换（忙自用 ↔ 闲可助）、**双向互助**——任何一端都既帮别人算，又能把自己的重活交出去。
-
-**核心：Offload SDK（`boss/pool_client.py`）** —— 让**任意一端的任意程序**借用整池算力，
-这就是"低端手机跑高端程序"的真实做法：弱机本地只发任务、收结果，重计算在池里并行完成。
-```python
-from pool_client import Pool
-pool = Pool("http://<协调端IP>:9000")
-total = pool.offload("prime", {"lo": 2, "hi": 5_000_000})          # 单个卸载
-rs    = pool.map("compute", [{"iterations": 2_000_000}]*64)         # 批量并行(显著加速)
-```
-示例 `boss/examples/heavy_on_lowend.py`：一个几乎不耗算力的脚本，把 60 个素数分片撒给全池——
-实测由 **PC矿工 38 片 + 手机 12 片** 分担完成。
-
-老板控制台新增「🧊 全局模式·一体机」卡：开关 + 合计核数/内存/GPU/空闲核 + 各节点 忙/闲 角色。
-HTTP 卸载入口：`POST /api/offload {type,payload,wait}`（给非 Python 客户端用）。
-
-> **诚实边界**：这是**可卸载/可并行任务**的一体化（重计算、按模块编译、下载、转码切片…），
-> **不是** OS 层透明借用——刷视频的解码、任意原生程序的无感提速做不到（跨异构系统、隔局域网、
-> 有延迟）。能做到的是把重活丢进池子让全员并行，弱机因此能"调用"高端算力。
-
-## 十二、真实工分 + 能效档位（beta-0.3）/ Real work-points + power level
-
-### 真实工分：挣多少 = 干得多 × 交付准
-工分**不是"声称了就发"**，而是发给**被验证为真**的活：
-- 任务完成后按概率**抽检**：把同一份活派给**另一台**设备复算。
-- 结果一致 → 发工分 + 信誉↑；不一致 → **工分撤销 + 信誉↓**，并用可信结果**纠正**原任务。
-- 一句话：**没有验证，就没有工分。**
-
-> **为什么弱机（如 WM 手机）工分会是负的？**
-> 因为它在全球算力里占比极低——**消耗的算力 > 它能贡献的**，净值就是负的。
-> 它享受了"和 iPhone 一样流畅"的体验，这份体验是池子托举出来的，所以要付工分。
-> 这和能效档位无关，是设备本身算力弱决定的。
-
-### 能效档位（1–5 级）= 给自己算力体设的「挣钱速度档」
-仿中国家电能效标签，但语义是**算力挣钱档**：**档位越高 → 投入核越多 → 干活越多 → 挣工分越快，同时越耗电**。
-
-```
-   能效档位（点击设置）          本机投入   挣工分速度   耗电
- ┌──────────────────────────────────────────────────────────┐
- │ 5级 ▰▰▰▰▰  满速 · 火力全开      15 核     ★★★★★    🔴 最多 │  ← 挣得最快
- │ 4级 ▰▰▰▰   高速                ~12 核     ★★★★     🟠      │
- │ 3级 ▰▰▰    均衡                  8 核     ★★★      🟡      │
- │ 2级 ▰▰     低耗                ~4 核      ★★       🟢      │
- │ 1级 ▰      节能 · 省电优先        1 核     ★        🟢 最少 │  ← 挣得最慢
- └──────────────────────────────────────────────────────────┘
-       低 ◄────────────  功耗 / 算力 / 挣钱速度  ────────────► 高
+:: 2b) 或 Web 控制台
+启动老板.bat       :: 然后浏览器开 http://127.0.0.1:8000
 ```
 
-> ⚠️ **别理解反了**：这不是"越节能挣越多"。中国能效标签里 1 级是最省电；这里 1 级也是最省电，
-> 但**省电=干得少=挣得慢**。要挣得多就调高档位（5 级），代价是耗电多。
+两种界面操作一致：
+1. 点 **「重新评估算力」** → 看到 PC 与各手机的**算力比例条**。
+2. 选一个**项目**、填参数 JSON（如 `{"count":200}`）。
+3. 点 **「开始加速」** → 实时看**每台设备的任务流**、总进度、吞吐、结果。
 
-**全速运行指示**：全局模式开启且有节点在交付算力时，老板控制台与桌面 GUI 都显示醒目的
-**「⚡ 全速运行中」** 徽标 —— 比如一台 WM 手机被池子托举着丝滑播放 1280p，就是高档位满速运行的画面。
+> 没装依赖也行，启动脚本会自动 `pip install -r requirements.txt`。
+> 协调端没开也能用——老板会只用 PC 本地算（手机比例为 0）。
 
-> 实测：1 级=1 核 / 3 级=8 核 / 5 级=15 核，点击即时生效（直接改本机投入算力的核数）。
-> 设置在两个 GUI 的「🧊 全局模式·一体机」卡里。
+手动运行：`.venv\Scripts\python.exe boss_gui.py`（桌面）或 `boss.py`（Web）。
 
-## 许可 / License
-本项目采用 **MIT License**（见 [LICENSE](LICENSE)）。原样提供，无担保。
-Licensed under the **MIT License** (see [LICENSE](LICENSE)). Provided as-is, no warranty.
+### 桌面 GUI 说明 / About the desktop GUI
+- 纯 **Tkinter**（Python 自带，零额外依赖），原生 Windows 窗口。
+- 网络(协调端)与硬件读取放**后台线程**，主循环每 0.5s 读快照重绘，**界面不卡**。
+- 用 **Canvas** 画彩色算力比例条、硬件仪表、每台设备任务流。
+- 模块导入零副作用 + `multiprocessing.freeze_support()`：多进程引擎(spawn)在 GUI 下也安全。
+
+---
+
+## 六、模块与函数用法 / Modules & functions
+
+### `boss.py` —— 主程序 + Flask Web 控制台
+| 路由 | 方法 | 作用 |
+|---|---|---|
+| `/` | GET | 可视化控制台页面 |
+| `/api/overview` | GET | PC 硬件画像+实时利用率、协调端在线手机、当前运行状态 |
+| `/api/projects` | GET | 可选项目清单 + 默认参数 |
+| `/api/assess` | POST | **立即重测**各设备算力，返回评分 + 比例（不启动任务）|
+| `/api/run` | POST | 启动一次加速运行 `{project, params}` |
+| `/api/run_status` | GET | 当前运行快照（进度/各设备完成/结果/日志）|
+| `/api/cancel` | POST | 取消当前运行 |
+| `/api/config` | POST | 改协调端地址 / 模型后端等并落盘 |
+- `lan_ip()` 取本机局域网 IP（告诉手机连哪）。
+
+### `config.py` —— 配置（环境变量 > `boss_config.json` > 默认）
+- `load()` / `save(cfg)`。关键项：`boss_port`(8000)、`coordinator_url`(:9000)、`use_local_pc`、
+  `pc_max_workers`、`enable_gpu`、`benchmark_seconds`、`capability_ttl`、`model_backend`、
+  `model_path`、`shard_size`、`poll_interval`。环境变量名为 `BOSS_<大写键名>`（如 `BOSS_BOSS_PORT`）。
+
+### `hardware.py` —— PC 关键硬件
+- `profile()` 静态画像：CPU 核数/频率、内存、磁盘、GPU 列表。
+- `utilization()` 动态：CPU% / 每核% / 内存% / 磁盘% / GPU% / 网络收发 KB/s。
+- `detect_gpus()` / `gpu_utilization()` 独显探测（pynvml→nvidia-smi，缺则空）。
+
+### `coordinator_client.py` —— 协调端客户端（软依赖）
+- `CoordinatorClient(base_url)`：`online()`、`status()`、`online_workers(kinds)`、
+  `submit(type,payload,weight)`→job_id、`job_results(ids)`。协调端没开不报错。
+
+### `capability.py` —— 算力评估
+- `CapabilityAssessor(cfg, client)`：
+  - `benchmark_pc()` 本地吃满多核测吞吐 → 评分。
+  - `benchmark_phone(device_id)` 经协调端投标定任务、测耗时 → 评分（超时退回按核数估计）。
+  - `assess(force=False)` 评估 PC+所有在线手机，返回 `{devices, ratio, total_score}`，带 TTL 缓存。
+
+### `executor.py` —— PC 本地多核引擎
+- `LocalExecutor(max_workers)`：`run(kind, items, on_progress)` 用进程池并行跑一批 item，
+  回调进度，返回 `(results, stats)`；`cancel()` 中断。
+
+### `workloads.py` —— 工作负载原语（顶层、可 pickle）
+- `w_prime / w_hash / w_compute / w_montecarlo / w_model_sim`，`run_item(kind,item)`。
+- `model_sim_cost(item)` / `model_sim_text(item)`：把"模型推理"折算成 compute 量 / 只生成文本。
+
+### `projects.py` —— 项目定义
+- `Project` 基类：`make_items(params)`、`reduce(results)`、`phone_job(item)`、`phone_merge(item,r)`。
+- `LocalModelProject`(含 `real_pc_backend()` / `run_pc_item()`)、`PrimeScanProject`、
+  `HashGrindProject`、`MonteCarloProject`。`registry(cfg)` / `catalog(cfg)`。
+- `PHONE_NATIVE = {prime, hash, compute}` —— 安卓 worker 原生支持的类型。
+
+### `scheduler.py` —— 调度器（核心）
+- `Scheduler(cfg, client, assessor, executor, registry)`：`start(project, params)`、
+  `is_busy()`、`cancel()`、`run.snapshot()`。内部 `_split()` 按比例切分、`_run_pc()` / `_run_phone()`
+  并行派发、`_pc_fallback()` 超时兜底。
+- `Run` 对象：全程可被 UI 轮询的运行状态。
+
+---
+
+## 七、扩展 / Extending
+
+- **接真实本地模型**：`pip install llama-cpp-python`（或 `transformers torch`），改
+  `boss_config.json` 的 `model_backend` + `model_path`。
+- **让手机也跑真模型 / 新任务类型**：在安卓 `Worker.kt` 的 `runJob()` 里加同名 `when` 分支
+  （如 `"model"`），再在本项目某 Project 的 `phone_job()` 里返回该类型即可——切分/派发/合并不用改。
+- **新项目**：继承 `Project`，实现 `make_items` / `reduce`（必要时 `phone_job` / `phone_merge`），
+  加进 `projects.registry()` 与 `catalog()`。
+
+---
+
+## 八、已验证 / Verified (2026-06-01)
+
+- PC(16 逻辑核 / 含 1 块 GPU) + 安卓模拟器 worker 经协调端接入。
+- `/api/assess` 实测算力比例 **PC 96.5% : 手机 3.5%**（手机经协调端真实标定）。
+- `prime_scan` [2,200000) = **17984** 个素数（π(200000) 正确）。
+- `montecarlo` 4,000,000 点 → **π ≈ 3.1412**；16 核全程吃满。
+- 控制台实时显示硬件利用、算力比例条、每台设备任务流、进度与结果。
+
+---
+
+## 九、目录 / Layout
+```
+电脑手机内部局域网算力共享老板/
+├─ boss.py                 Web 控制台主程序 (Flask)
+├─ boss_gui.py             ★Windows 桌面 GUI (Tkinter)
+├─ config.py               配置
+├─ hardware.py             PC 关键硬件探测 + 利用率
+├─ coordinator_client.py   协调端客户端
+├─ capability.py           算力评估 + 比例
+├─ executor.py             PC 本地多核执行引擎
+├─ workloads.py            工作负载原语（可 pickle）
+├─ projects.py             项目（含本地模型推理）
+├─ scheduler.py            调度器：评估→切分→派发→兜底→合并
+├─ templates/dashboard.html  可视化控制台
+├─ static/style.css · app.js 控制台前端
+├─ requirements.txt
+├─ 启动老板.bat            启动 Web 控制台（先杀旧实例）
+├─ 启动老板GUI.bat         启动 Windows 桌面 GUI（先杀旧实例）
+└─ README.md
+```
+
+---
+
+## 十、大规模并行计算实测报告（2026-06-02）
+
+### 测试环境
+
+- **PC**：16 逻辑核 / 8 物理核，NVIDIA RTX 3070 Laptop（8 GB VRAM），32 GB RAM
+- **真机**：Samsung SM-S9370，8 核，电量 48%，GREEN
+- **模拟器**：sdk_gphone64_x86_64（Android API 36），6 核，YELLOW（内存 80.5%）
+
+### 算力评估（benchmark）
+
+| 设备 | 评分 | 比例 |
+|------|------|------|
+| 本机 PC（16 核） | 20.63 | **95.8 %** |
+| 模拟器（6 核） | 0.70 | **3.25 %** |
+| 真机 SM-S9370（8 核） | 0.20 | **0.95 %** |
+
+### 任务 1 · 大区间素数统计 `prime_scan`
+
+| 项目 | 数值 |
+|------|------|
+| 参数 | `limit=10,000,000`，`chunk=50,000`，200 片 |
+| 分发 | PC **195 片** · 模拟器 **4 片** · 真机 **1 片** |
+| 结果 | **664,579** 个素数（π(10M) 标准值 664,579）✅ |
+| 耗时 | 38.0 s，吞吐 5.26 片/s |
+
+### 任务 2 · 批量 SHA-256 `hash_grind`
+
+| 项目 | 数值 |
+|------|------|
+| 参数 | `count=800`，`rounds=100,000`，800 片 |
+| 分发 | PC **766 片** · 模拟器 **26 片** · 真机 **8 片** |
+| 结果 | 800 片全部完成，哈希结果一致 ✅ |
+| 耗时 | 34.7 s，吞吐 **23.06 片/s** |
+
+### 任务 3 · 蒙特卡洛估 π `montecarlo`（PC-only）
+
+| 项目 | 数值 |
+|------|------|
+| 参数 | `samples=100,000,000`，`chunk=1,000,000`，100 片 |
+| 分发 | PC **100 片** · 手机 **0 片**（安卓 worker 无此原语，自动豁免）✅ |
+| 结果 | π ≈ **3.141568**（误差 < 1×10⁻⁵）✅ |
+| 耗时 | 15.8 s，吞吐 6.33 片/s |
+
+### 验证结论
+
+- **按算力比例切片正确**：最大余数法分配与理论比例吻合，三台设备合计等于总片数。
+- **PC-only 任务手机自动豁免**：`montecarlo` 正确跳过两台手机，PC 独吞 100 片。
+- **安全阈值兼容**：模拟器内存 80.5%（YELLOW 档），分发不受阻，任务正常完成。
+- **结果精度**：素数计数与标准值完全一致；π 估计误差 < 1×10⁻⁵。
+
+---
+
+> 本系统是**你自己的**局域网算力池，加速**你自己的项目**；与把算力贡献给第三方云换额度无关。
+> This is **your own** LAN compute pool for **your own** projects.
