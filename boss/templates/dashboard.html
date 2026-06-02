@@ -154,6 +154,20 @@
     </div>
     <pre id="devLog" class="devlog">—</pre>
   </section>
+
+  <!-- WM ARM 机器码容器服务(中央服务器) -->
+  <section class="card span2">
+    <div class="card-h"><b>📟 WM ARM 容器服务</b>
+      <small>把 WM 设备的机器码执行搬到中央服务器；每版一容器，默认 1核 / 1GB / 共享GPU</small>
+      <span id="armSum" class="caps"></span></div>
+    <div class="runner">
+      <button id="btnArmAll" class="btn primary">全部启动</button>
+      <button id="btnArmStopAll" class="btn danger">全部停止</button>
+      <span id="armBackend" class="hint"></span>
+    </div>
+    <div id="armList" class="omnodes"></div>
+    <div class="hint">⚠️ sim 后端=管理面(配额/状态/启停就绪)；真实机器码执行需在配置里把 <code>arm_emulator</code> 指向 qemu-system-arm 或微软 DeviceEmulator。详见 wmdtpprivate 蓝图。</div>
+  </section>
 </main>
 
 <footer>
