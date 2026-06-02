@@ -312,7 +312,31 @@ function renderEnergy(g) {
   }
 }
 
+// ── WM ARM 容器服务 ───────────────────────────────────────────────────────────
+async function armPost(path, ver) {
+  await fetch("/api/arm/" + path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ver }) });
+  armTick();
+}
+$("btnArmAll").addEventListener("click", () => armPost("start", "*"));
+$("btnArmStopAll").addEventListener("click", () => armPost("stop", "*"));
+async function armTick() {
+  let s; try { s = await (await fetch("/api/arm/list")).json(); } catch { return; }
+  const sm = s.summary || {};
+  $("armSum").textContent = `运行 ${sm.running}/${sm.total} · 每容器 ${sm.cores_each}核/${sm.mem_each_mb}MB${sm.gpu_share ? "/共享GPU" : ""}`;
+  $("armBackend").textContent = "执行后端: " + (sm.backend || "sim");
+  $("armList").innerHTML = (s.containers || []).map(c => {
+    const run = c.state === "running";
+    const col = run ? "idle" : (c.state === "error" ? "busy" : "");
+    return `<span class="omnode"><span class="ic">📟</span>WM ${c.ver}
+      <span class="role ${col}">${run ? "运行中" : c.state}</span>
+      <span>${c.cores}核/${c.mem_mb}MB${c.gpu_share ? "/GPU" : ""}</span>
+      <button class="btn" style="padding:2px 8px;font-size:11px" onclick="armPost('${run ? "stop" : "start"}','${c.ver}')">${run ? "停止" : "启动"}</button></span>`;
+  }).join("") || '<span class="hint">无容器</span>';
+}
+
 // ── 启动 ────────────────────────────────────────────────────────────────────
+armTick();
+setInterval(armTick, 2500);
 loadProjects();
 globalTick();
 setInterval(globalTick, 2000);

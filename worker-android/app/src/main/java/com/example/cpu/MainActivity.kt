@@ -196,7 +196,6 @@ fun WorkerScreen(worker: Worker, deviceName: String) {
             }
 
             // 启停
-            val ctx = androidx.compose.ui.platform.LocalContext.current
             Button(
                 onClick = {
                     if (running) {

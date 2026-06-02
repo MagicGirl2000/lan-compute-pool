@@ -32,6 +32,7 @@ import projects as projects_mod
 from scheduler import Scheduler
 from devtasks import DevAccelerator
 from globalmode import GlobalMode
+from armcontainer import ArmService
 
 # ── 配色（深色主题）──
 BG = "#0d1118"; PANEL = "#161c28"; PANEL2 = "#1d2533"; LINE = "#2a3344"
@@ -70,6 +71,7 @@ class BossGUI:
         self.devacc = DevAccelerator(self.cfg, self.client, self.scheduler)
         self.profile = hardware.profile()
         self.glob = GlobalMode(self.cfg, self.client, self.profile)
+        self.arm = ArmService(self.cfg)
         # ── 后台轮询共享状态 ──
         self.state = {"util": hardware.utilization(), "coord": None}
         self.last_ratio = {}     # 上次评估的比例（设备 -> dict）
@@ -139,6 +141,8 @@ class BossGUI:
         self._card_progress(inner)
         # —— 开发任务加速 (beta0.2) ——
         self._card_dev(inner)
+        # —— WM ARM 容器服务 ——
+        self._card_arm(inner)
         # —— 结果 / 日志 ——
         self._card_output(inner)
 
@@ -473,6 +477,56 @@ class BossGUI:
     def on_dev_cancel(self):
         self.devacc.cancel()
 
+    def _card_arm(self, parent):
+        _, head, inner = self._card(parent, "📟 WM ARM 容器服务",
+                                    "WM 机器码执行搬到中央；每版一容器，默认 1核/1GB/共享GPU")
+        self.arm_sum = tk.Label(head, text="", bg=PANEL, fg=MUT, font=("Segoe UI", 8))
+        self.arm_sum.pack(side="right")
+        row = tk.Frame(inner, bg=PANEL)
+        row.pack(fill="x")
+        tk.Button(row, text="全部启动", command=lambda: self._arm("*", "start"), bg=ACC,
+                  fg="#06101f", relief="flat", font=("Segoe UI", 9, "bold"),
+                  cursor="hand2").pack(side="left")
+        tk.Button(row, text="全部停止", command=lambda: self._arm("*", "stop"), bg="#3a1d22",
+                  fg="#ff9b9b", relief="flat", font=("Segoe UI", 9), cursor="hand2").pack(side="left", padx=(6, 0))
+        self.arm_list = tk.Frame(inner, bg=PANEL)
+        self.arm_list.pack(fill="x", pady=(8, 0))
+        self._arm_widgets = []
+        tk.Label(inner, text="sim 后端=管理面(配额/启停就绪)；真实执行需配置 arm_emulator 指向 qemu/DeviceEmulator",
+                 bg=PANEL, fg=MUT, font=("Segoe UI", 8), wraplength=900, justify="left").pack(anchor="w", pady=(6, 0))
+
+    def _arm(self, ver, action):
+        if action == "start":
+            self.arm.start(ver)
+        else:
+            self.arm.stop(ver)
+
+    def _refresh_arm(self):
+        sm = self.arm.summary()
+        self.arm_sum.config(text="运行 %d/%d · 每容器 %d核/%dMB%s · 后端%s" % (
+            sm["running"], sm["total"], sm["cores_each"], sm["mem_each_mb"],
+            "/共享GPU" if sm["gpu_share"] else "", sm["backend"]))
+        for w in self._arm_widgets:
+            w.destroy()
+        self._arm_widgets = []
+        for c in self.arm.list():
+            run = c["state"] == "running"
+            fr = tk.Frame(self.arm_list, bg=PANEL2)
+            fr.pack(fill="x", pady=2)
+            tk.Label(fr, text="📟 WM %s" % c["ver"], bg=PANEL2, fg=TXT,
+                     font=("Segoe UI", 9, "bold")).pack(side="left", padx=8, pady=4)
+            tk.Label(fr, text=("运行中" if run else c["state"]), bg=PANEL2,
+                     fg=(G if run else (R if c["state"] == "error" else MUT)),
+                     font=("Segoe UI", 8)).pack(side="left", padx=4)
+            tk.Label(fr, text="%d核/%dMB%s" % (c["cores"], c["mem_mb"], "/GPU" if c["gpu_share"] else ""),
+                     bg=PANEL2, fg=MUT, font=("Segoe UI", 8)).pack(side="left", padx=4)
+            v = c["ver"]
+            tk.Button(fr, text=("停止" if run else "启动"),
+                      command=lambda vv=v, a=("stop" if run else "start"): self._arm(vv, a),
+                      bg=PANEL, fg=TXT, relief="flat", font=("Segoe UI", 8),
+                      cursor="hand2").pack(side="left", padx=6)
+            self._arm_widgets.append(fr)
+
     def _card_output(self, parent):
         outer = tk.Frame(parent, bg=BG)
         outer.pack(fill="both", expand=True, pady=4)
@@ -739,6 +793,11 @@ class BossGUI:
         # 开发任务加速面板
         try:
             self._refresh_dev()
+        except Exception:
+            pass
+        # WM ARM 容器服务
+        try:
+            self._refresh_arm()
         except Exception:
             pass
 

@@ -27,6 +27,7 @@ import projects as projects_mod
 from scheduler import Scheduler
 from devtasks import DevAccelerator
 from globalmode import GlobalMode
+from armcontainer import ArmService
 
 CFG = config.load()
 
@@ -41,6 +42,7 @@ devacc = DevAccelerator(CFG, client, scheduler)
 
 PROFILE = hardware.profile()
 glob = GlobalMode(CFG, client, PROFILE)
+arm = ArmService(CFG)
 
 
 def lan_ip():
@@ -160,6 +162,25 @@ def api_dev_cancel():
 @app.route("/api/global/status")
 def api_global_status():
     return jsonify(glob.status())
+
+
+@app.route("/api/arm/list")
+def api_arm_list():
+    return jsonify({"containers": arm.list(), "summary": arm.summary()})
+
+
+@app.route("/api/arm/start", methods=["POST"])
+def api_arm_start():
+    j = request.get_json(force=True, silent=True) or {}
+    ok, msg = arm.start(j.get("ver", "*"))
+    return jsonify({"ok": ok, "msg": msg})
+
+
+@app.route("/api/arm/stop", methods=["POST"])
+def api_arm_stop():
+    j = request.get_json(force=True, silent=True) or {}
+    ok, msg = arm.stop(j.get("ver", "*"))
+    return jsonify({"ok": ok, "msg": msg})
 
 
 @app.route("/api/global/set_level", methods=["POST"])

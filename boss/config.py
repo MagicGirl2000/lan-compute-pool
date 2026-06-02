@@ -59,6 +59,13 @@ DEFAULTS = {
     "share_mem": True,    # 内存(允许更大分片)
     "share_disk": True,   # 硬盘(共享缓存 wheelhouse/gradle)
     "share_net": True,    # 网络(并行下载/预取)
+
+    # ── WM ARM 机器码容器服务(中央服务器) ──
+    "arm_backend": "sim",      # sim(管理面) | qemu | devemu(微软DeviceEmulator)
+    "arm_emulator": "",        # qemu-system-arm 或 DeviceEmulator.exe 的路径(真实后端用)
+    "arm_cores": 1,            # 每容器默认核数(单核)
+    "arm_mem_mb": 1024,        # 每容器默认内存(1GB)
+    "arm_gpu_share": True,     # 每容器共享 GPU(3070) 算力
 }
 
 

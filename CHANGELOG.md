@@ -35,6 +35,13 @@ Web 控制台与桌面 GUI 都新增「🔌 共享设置」：可勾选是否把
 #### 5) 工分/信誉显示（两个 GUI）
 设备列表显示各节点的 **工分 / 信誉 / 复检失败数**。
 
+#### 6.8) WM ARM 机器码容器服务（中央服务器）
+老板新增 `armcontainer.py` + 两 GUI 面板「📟 WM ARM 容器服务」：把 WM 设备的机器码执行
+搬到中央 x86，**WM 2003 → 6.5 每版一个容器**，默认配额 **1 核 / 1GB / 共享 GPU(3070)**，
+统一启停 / 状态 / 限核。端点 `/api/arm/{list,start,stop}`。
+**执行后端可插拔**：`sim`(管理面，默认，已就绪可跑) → 配置 `arm_emulator` 指向
+qemu-system-arm 或微软 DeviceEmulator 即真跑 WM 镜像。配套 [wmdtpprivate](https://github.com/MagicGirl2000/bilibili-wm) 的 DTP 干燥终端蓝图。
+
 #### 6.5) 中央越权 · 全局统一设档（老板 = 中央处理器）
 老板作为"中央处理器"，可一键给**全网所有节点**统一下发能效档（`POST /api/set_level {device_id:"*",level}`），
 节点随心跳/拉活收到后照此执行——"集中力量办大事"。
